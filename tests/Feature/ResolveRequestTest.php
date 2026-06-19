@@ -7,6 +7,9 @@ use RoundlyConsulting\Requests\Actions\CreateRequest;
 use RoundlyConsulting\Requests\Actions\ResolveRequest;
 use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
 use RoundlyConsulting\Requests\Enums\Status;
+use RoundlyConsulting\Requests\Events\ApprovalRecorded;
+use RoundlyConsulting\Requests\Events\ApprovalRevoked;
+use RoundlyConsulting\Requests\Events\RequestRejected;
 use RoundlyConsulting\Requests\Events\RequestStatusChanged;
 use RoundlyConsulting\Requests\Tests\User;
 
@@ -136,4 +139,24 @@ it('resets request to new and revokes the approval', function () {
     ]);
 
     expect($request->hasBeenApprovedBy($user))->toBeFalse();
+});
+
+it('fires granular approval and rejection events with the acting actor', function () {
+    Event::fake([ApprovalRecorded::class, ApprovalRevoked::class, RequestRejected::class]);
+
+    $request = (new CreateRequest)->execute(new CreateRequestDto);
+
+    /** @var User $user */
+    $user = User::create();
+
+    $action = new ResolveRequest;
+
+    $action->execute($request, $user, Status::Approved);
+
+    Event::assertDispatched(fn (ApprovalRecorded $e) => $e->request->is($request) && $e->actor->is($user));
+
+    $action->execute($request, $user, Status::Rejected);
+
+    Event::assertDispatched(fn (ApprovalRevoked $e) => $e->request->is($request) && $e->actor->is($user));
+    Event::assertDispatched(fn (RequestRejected $e) => $e->request->is($request) && $e->actor->is($user));
 });

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\Requests\Actions\CreateRequest;
 use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
@@ -56,4 +57,32 @@ it('creates request with all details', function () {
         'meta' => '{"ip":"127.0.0.1"}',
         'require_approvals_from' => '[1]',
     ]);
+});
+
+it('stamps expires_at from the default ttl when set', function () {
+    config()->set('requests.default_ttl', 60);
+
+    Carbon::setTestNow('2026-06-19 12:00:00');
+
+    $request = (new CreateRequest)->execute(new CreateRequestDto);
+
+    expect($request->expires_at?->equalTo(now()->addMinutes(60)))->toBeTrue();
+
+    Carbon::setTestNow();
+});
+
+it('prefers an explicit expiry over the default ttl', function () {
+    config()->set('requests.default_ttl', 60);
+
+    $at = now()->addDays(5)->startOfSecond();
+
+    $request = (new CreateRequest)->execute(new CreateRequestDto(expiresAt: $at));
+
+    expect($request->expires_at?->equalTo($at))->toBeTrue();
+});
+
+it('leaves expires_at null without a ttl', function () {
+    $request = (new CreateRequest)->execute(new CreateRequestDto);
+
+    expect($request->expires_at)->toBeNull();
 });

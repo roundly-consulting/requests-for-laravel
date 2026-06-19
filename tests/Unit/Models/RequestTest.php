@@ -49,3 +49,15 @@ it('reports approval status across multiple required actors', function (): void 
 
     expect($request->hasBeenApprovedByAll($first->getMorphClass(), [$first->id, $second->id]))->toBeTrue();
 });
+
+it('reports expiry only for open, past-due requests', function (): void {
+    $expired = Request::factory()->expired()->create();
+    $future = Request::factory()->pending()->create(['expires_at' => now()->addDay()]);
+    $approved = Request::factory()->approved()->create(['expires_at' => now()->subDay()]);
+    $noDeadline = Request::factory()->pending()->create();
+
+    expect($expired->isExpired())->toBeTrue()
+        ->and($future->isExpired())->toBeFalse()
+        ->and($approved->isExpired())->toBeFalse()
+        ->and($noDeadline->isExpired())->toBeFalse();
+});

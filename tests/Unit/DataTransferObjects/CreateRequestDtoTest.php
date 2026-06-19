@@ -32,3 +32,11 @@ it('carries all provided values', function (): void {
         ->and($dto->meta?->all())->toBe(['ip' => '127.0.0.1'])
         ->and($dto->requireApprovalsFrom?->all())->toBe([1, 2]);
 });
+
+it('carries an expiry deadline', function (): void {
+    $at = now()->addDay();
+
+    $dto = new CreateRequestDto(expiresAt: $at);
+
+    expect($dto->expiresAt?->equalTo($at))->toBeTrue();
+});
