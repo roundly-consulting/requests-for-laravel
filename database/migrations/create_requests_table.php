@@ -1,0 +1,27 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+use RoundlyConsulting\Requests\Enums\Status;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('requests', function (Blueprint $table): void {
+            $table->id();
+            $table->string('status', 8)->default(Status::New->value);
+            $table->nullableMorphs('author');
+            $table->string('type')->nullable();
+            $table->string('title')->nullable();
+            $table->text('description')->nullable();
+            $table->json('meta')->nullable();
+            $table->json('require_approvals_from')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+    }
+};
