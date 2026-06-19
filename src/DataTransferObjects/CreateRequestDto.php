@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Requests\DataTransferObjects;
 
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use RoundlyConsulting\Requests\Enums\Status;
@@ -22,5 +23,6 @@ final readonly class CreateRequestDto
         public ?string $description = null,
         public ?Collection $meta = null,
         public ?Collection $requireApprovalsFrom = null,
+        public ?CarbonInterface $expiresAt = null,
     ) {}
 }
