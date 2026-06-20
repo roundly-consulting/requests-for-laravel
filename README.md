@@ -1,3 +1,11 @@
+<!-- roundly-hero:start -->
+<p align="center">
+  <a href="https://roundly-consulting.com/open-source/docs/requests-for-laravel?utm_source=github&utm_medium=readme&utm_campaign=open-source&utm_content=requests-for-laravel">
+    <img src="art/hero.png" alt="Requests for Laravel — Roundly open source" width="100%">
+  </a>
+</p>
+<!-- roundly-hero:end -->
+
 # Requests for Laravel
 
 Requests from entities with approvals. This package models a **request** (a claim or
