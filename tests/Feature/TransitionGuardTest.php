@@ -35,7 +35,7 @@ it('preserves legacy behaviour when enforcement is off', function (): void {
     $request = (new CreateRequest)->execute(new CreateRequestDto(status: Status::Rejected));
     $user = User::create();
 
-    // With the flag off, the legacy toggle path runs and the move is not guarded.
+    // With the flag off, the move is not guarded and resolves immediately.
     (new ResolveRequest)->execute($request, $user, Status::Approved);
 
     expect($request->fresh()?->status)->toBe(Status::Approved);

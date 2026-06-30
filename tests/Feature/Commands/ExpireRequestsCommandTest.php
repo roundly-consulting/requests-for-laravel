@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
+use RoundlyConsulting\Approvals\Facades\Approvals;
 use RoundlyConsulting\Requests\Enums\Status;
 use RoundlyConsulting\Requests\Events\RequestExpired;
 use RoundlyConsulting\Requests\Models\Request;
+use RoundlyConsulting\Requests\Tests\User;
 
 afterEach(function (): void {
     Carbon::setTestNow();
@@ -59,5 +61,16 @@ it('reports zero when nothing is due', function (): void {
 
     $this->artisan('requests:expire')
         ->expectsOutputToContain('Expired 0 request(s).')
+        ->assertSuccessful();
+});
+
+it('lapses expired pending approval decisions', function (): void {
+    $request = Request::factory()->pending()->create();
+    $user = User::create();
+
+    Approvals::for($request)->as($user)->expiringAt(now()->subDay())->request();
+
+    $this->artisan('requests:expire')
+        ->expectsOutputToContain('Lapsed 1 expired approval decision(s).')
         ->assertSuccessful();
 });

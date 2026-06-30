@@ -15,9 +15,9 @@ use RoundlyConsulting\Requests\Testing\RequestsFake;
 /**
  * @method static RequestBuilder make()
  * @method static Request create(CreateRequestDto $dto)
- * @method static Request approve(Request $request, Model $actor)
- * @method static Request reject(Request $request, Model $actor)
- * @method static Request reopen(Request $request, Model $actor)
+ * @method static Request approve(Request $request, Model $actor, ?string $reason = null)
+ * @method static Request reject(Request $request, Model $actor, ?string $reason = null)
+ * @method static Request reopen(Request $request, Model $actor, ?string $reason = null)
  * @method static Request cancel(Request $request)
  * @method static Request expire(Request $request)
  *

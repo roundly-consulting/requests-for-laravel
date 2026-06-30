@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RoundlyConsulting\Requests\Commands;
 
 use Illuminate\Console\Command;
+use RoundlyConsulting\Approvals\Facades\Approvals;
 use RoundlyConsulting\Requests\Actions\ExpireRequest;
 use RoundlyConsulting\Requests\Models\Request;
 
@@ -36,6 +37,15 @@ final class ExpireRequestsCommand extends Command
         $this->info($dryRun
             ? "Would expire {$count} request(s)."
             : "Expired {$count} request(s).");
+
+        if (! $dryRun) {
+            // Lapse any pending approval decisions whose own expiry has passed.
+            $lapsed = Approvals::expire();
+
+            if ($lapsed > 0) {
+                $this->info("Lapsed {$lapsed} expired approval decision(s).");
+            }
+        }
 
         return self::SUCCESS;
     }

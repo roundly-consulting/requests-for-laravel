@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace RoundlyConsulting\Requests;
 
 use Illuminate\Foundation\AliasLoader;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
+use RoundlyConsulting\Approvals\Events\ApprovalRequestResolved;
 use RoundlyConsulting\Requests\Commands\ExpireRequestsCommand;
 use RoundlyConsulting\Requests\Facades\Requests;
+use RoundlyConsulting\Requests\Listeners\SyncRequestStatusFromApproval;
 
 final class RequestsServiceProvider extends ServiceProvider
 {
@@ -24,6 +27,8 @@ final class RequestsServiceProvider extends ServiceProvider
         $this->loadTranslationsFrom(__DIR__.'/../resources/lang', 'requests');
 
         $this->registerFacadeAlias();
+
+        Event::listen(ApprovalRequestResolved::class, SyncRequestStatusFromApproval::class);
 
         if ($this->app->runningInConsole()) {
             $this->commands([

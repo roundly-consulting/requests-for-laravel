@@ -6,6 +6,9 @@ namespace RoundlyConsulting\Requests\Actions;
 
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
+use RoundlyConsulting\Approvals\Enums\ApprovalStatus;
+use RoundlyConsulting\Approvals\Facades\Approvals;
+use RoundlyConsulting\Approvals\Support\ApprovalRequestModelResolver;
 use RoundlyConsulting\Requests\Contracts\CreatesRequests;
 use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
 use RoundlyConsulting\Requests\Events\RequestCreated;
@@ -31,9 +34,55 @@ final class CreateRequest implements CreatesRequests
 
         $request->save();
 
+        $this->openApprovalRequest($request, $dto);
+
         event(new RequestCreated($request));
 
         return $request;
+    }
+
+    /**
+     * Open an approvals-engine request for the new request, when one is called for.
+     * A named workflow preset wins, then an explicit staged pipeline, then the flat
+     * declared approver set. A request without approvers opens nothing.
+     */
+    private function openApprovalRequest(Request $request, CreateRequestDto $dto): void
+    {
+        if ($dto->workflow !== null) {
+            $approvers = $dto->stageApprovers !== [] ? $dto->stageApprovers : $dto->approvers;
+
+            Approvals::for($request)->workflow($dto->workflow)->request($approvers);
+
+            return;
+        }
+
+        if ($dto->stages !== []) {
+            $request->requestStagedApproval($dto->stages, $dto->rejectOnStageRejection);
+
+            return;
+        }
+
+        $ids = $request->require_approvals_from;
+
+        if ($ids === null || $ids->isEmpty()) {
+            return;
+        }
+
+        $this->openFlatApprovalRequest($request, $dto, $ids->unique()->count());
+    }
+
+    private function openFlatApprovalRequest(Request $request, CreateRequestDto $dto, int $required): void
+    {
+        $model = ApprovalRequestModelResolver::class();
+
+        $approvalRequest = new $model;
+        $approvalRequest->subject_id = $request->getKey();
+        $approvalRequest->subject_type = $request->getMorphClass();
+        $approvalRequest->rule = $dto->rule;
+        $approvalRequest->quorum = $dto->quorum;
+        $approvalRequest->required_approvers = $required;
+        $approvalRequest->status = ApprovalStatus::Pending;
+        $approvalRequest->save();
     }
 
     private function defaultExpiry(): ?CarbonInterface

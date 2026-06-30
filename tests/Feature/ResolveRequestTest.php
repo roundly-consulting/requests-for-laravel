@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Event;
+use RoundlyConsulting\Approvals\Enums\ApprovalStatus;
 use RoundlyConsulting\Requests\Actions\CreateRequest;
 use RoundlyConsulting\Requests\Actions\ResolveRequest;
 use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
@@ -13,17 +14,13 @@ use RoundlyConsulting\Requests\Events\RequestRejected;
 use RoundlyConsulting\Requests\Events\RequestStatusChanged;
 use RoundlyConsulting\Requests\Tests\User;
 
-it('approves request when no required approvals from are defined', function () {
+it('approves immediately when no approvers are required', function () {
     $request = (new CreateRequest)->execute(new CreateRequestDto);
-
-    /** @var User $user */
     $user = User::create();
-
-    $action = new ResolveRequest;
 
     Event::fake(RequestStatusChanged::class);
 
-    $action->execute($request, $user, Status::Approved);
+    (new ResolveRequest)->execute($request, $user, Status::Approved);
 
     Event::assertDispatched(
         fn (RequestStatusChanged $e) => $e->request->is($request) && $request->status === Status::Approved,
@@ -35,66 +32,7 @@ it('approves request when no required approvals from are defined', function () {
     ]);
 });
 
-it('does not approve request when no only one user approved but two are required', function () {
-    /** @var User $user */
-    $user = User::create();
-
-    /** @var User $anotherUser */
-    $anotherUser = User::create();
-
-    $request = (new CreateRequest)->execute(new CreateRequestDto(
-        requireApprovalsFrom: collect([
-            $user->id,
-            $anotherUser->id,
-        ])
-    ));
-
-    $action = new ResolveRequest;
-
-    Event::fake(RequestStatusChanged::class);
-
-    $action->execute($request, $user, Status::Approved);
-
-    Event::assertNotDispatched(RequestStatusChanged::class);
-
-    $this->assertDatabaseHas('requests', [
-        'id' => $request->id,
-        'status' => Status::New->value,
-    ]);
-
-    expect($request->hasBeenApprovedBy($user))->toBeTrue()
-        ->and($request->hasBeenApprovedBy($anotherUser))->toBeFalse();
-});
-
-it('rejects request and removes previous approval', function () {
-    $request = (new CreateRequest)->execute(new CreateRequestDto(
-        status: Status::Approved,
-    ));
-
-    /** @var User $user */
-    $user = User::create();
-
-    $user->toggleApproval($request);
-
-    $action = new ResolveRequest;
-
-    Event::fake(RequestStatusChanged::class);
-
-    $action->execute($request, $user, Status::Rejected);
-
-    Event::assertDispatched(
-        fn (RequestStatusChanged $e) => $e->request->is($request) && $request->status === Status::Rejected,
-    );
-
-    $this->assertDatabaseHas('requests', [
-        'id' => $request->id,
-        'status' => Status::Rejected->value,
-    ]);
-
-    expect($request->hasBeenApprovedBy($user))->toBeFalse();
-});
-
-it('approves request once every required approver has approved', function () {
+it('holds at new until every required approver has approved', function () {
     $user = User::create();
     $anotherUser = User::create();
 
@@ -102,17 +40,38 @@ it('approves request once every required approver has approved', function () {
         requireApprovalsFrom: collect([$user->id, $anotherUser->id]),
     ));
 
-    $action = new ResolveRequest;
+    Event::fake(RequestStatusChanged::class);
+
+    (new ResolveRequest)->execute($request, $user, Status::Approved);
+
+    Event::assertNotDispatched(RequestStatusChanged::class);
+
+    $this->assertDatabaseHas('requests', [
+        'id' => $request->id,
+        'status' => Status::New->value,
+    ]);
+
+    expect($user->hasApproved($request))->toBeTrue()
+        ->and($anotherUser->hasApproved($request))->toBeFalse();
+});
+
+it('approves once every required approver has approved', function () {
+    $user = User::create();
+    $anotherUser = User::create();
+
+    $request = (new CreateRequest)->execute(new CreateRequestDto(
+        requireApprovalsFrom: collect([$user->id, $anotherUser->id]),
+    ));
 
     Event::fake(RequestStatusChanged::class);
 
-    $action->execute($request, $user, Status::Approved);
+    (new ResolveRequest)->execute($request, $user, Status::Approved);
     Event::assertNotDispatched(RequestStatusChanged::class);
 
-    $action->execute($request, $anotherUser, Status::Approved);
+    (new ResolveRequest)->execute($request, $anotherUser, Status::Approved);
 
     Event::assertDispatched(
-        fn (RequestStatusChanged $e) => $e->request->is($request) && $request->status === Status::Approved,
+        fn (RequestStatusChanged $e) => $e->request->is($request) && $e->request->status === Status::Approved,
     );
 
     $this->assertDatabaseHas('requests', [
@@ -121,42 +80,62 @@ it('approves request once every required approver has approved', function () {
     ]);
 });
 
-it('resets request to new and revokes the approval', function () {
+it('rejects a unanimous request on the first rejection', function () {
+    $user = User::create();
+    $anotherUser = User::create();
+
     $request = (new CreateRequest)->execute(new CreateRequestDto(
-        status: Status::Approved,
+        requireApprovalsFrom: collect([$user->id, $anotherUser->id]),
     ));
 
-    $user = User::create();
-    $user->toggleApproval($request);
+    (new ResolveRequest)->execute($request, $user, Status::Rejected, reason: 'Out of policy');
 
-    $action = new ResolveRequest;
+    expect($request->fresh()?->status)->toBe(Status::Rejected)
+        ->and($user->hasRejected($request))->toBeTrue();
 
-    $action->execute($request, $user, Status::New);
-
-    $this->assertDatabaseHas('requests', [
-        'id' => $request->id,
-        'status' => Status::New->value,
+    $this->assertDatabaseHas('approvals', [
+        'status' => ApprovalStatus::Rejected->value,
+        'reason' => 'Out of policy',
     ]);
-
-    expect($request->hasBeenApprovedBy($user))->toBeFalse();
 });
 
-it('fires granular approval and rejection events with the acting actor', function () {
+it('records a per-decision reason on approval', function () {
+    $request = (new CreateRequest)->execute(new CreateRequestDto);
+    $user = User::create();
+
+    (new ResolveRequest)->execute($request, $user, Status::Approved, reason: 'Looks good');
+
+    $this->assertDatabaseHas('approvals', [
+        'status' => ApprovalStatus::Approved->value,
+        'reason' => 'Looks good',
+    ]);
+});
+
+it('reopens a request and revokes the approval', function () {
+    $request = (new CreateRequest)->execute(new CreateRequestDto(status: Status::Approved));
+    $user = User::create();
+    $user->approve($request);
+
+    (new ResolveRequest)->execute($request, $user, Status::New);
+
+    expect($request->fresh()?->status)->toBe(Status::New)
+        ->and($user->hasApproved($request))->toBeFalse();
+});
+
+it('fires granular approval, revoke and rejection events with the acting actor', function () {
     Event::fake([ApprovalRecorded::class, ApprovalRevoked::class, RequestRejected::class]);
 
     $request = (new CreateRequest)->execute(new CreateRequestDto);
-
-    /** @var User $user */
     $user = User::create();
 
     $action = new ResolveRequest;
 
     $action->execute($request, $user, Status::Approved);
-
     Event::assertDispatched(fn (ApprovalRecorded $e) => $e->request->is($request) && $e->actor->is($user));
 
     $action->execute($request, $user, Status::Rejected);
-
-    Event::assertDispatched(fn (ApprovalRevoked $e) => $e->request->is($request) && $e->actor->is($user));
     Event::assertDispatched(fn (RequestRejected $e) => $e->request->is($request) && $e->actor->is($user));
+
+    $action->execute($request, $user, Status::New);
+    Event::assertDispatched(fn (ApprovalRevoked $e) => $e->request->is($request) && $e->actor->is($user));
 });

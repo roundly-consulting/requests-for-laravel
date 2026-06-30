@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace RoundlyConsulting\Requests;
 
 use Illuminate\Database\Eloquent\Model;
+use RoundlyConsulting\Approvals\Interfaces\GivesApprovalsInterface;
 use RoundlyConsulting\Requests\Actions\CancelRequest;
 use RoundlyConsulting\Requests\Actions\CreateRequest;
 use RoundlyConsulting\Requests\Actions\ExpireRequest;
 use RoundlyConsulting\Requests\Actions\ResolveRequest;
-use RoundlyConsulting\Requests\Approvals\Contracts\GivesApprovals;
 use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
 use RoundlyConsulting\Requests\Enums\Status;
 use RoundlyConsulting\Requests\Models\Request;
@@ -37,19 +37,19 @@ class RequestManager
         return $this->create->execute($dto);
     }
 
-    public function approve(Request $request, Model&GivesApprovals $actor): Request
+    public function approve(Request $request, Model&GivesApprovalsInterface $actor, ?string $reason = null): Request
     {
-        return $this->resolve->execute($request, $actor, Status::Approved);
+        return $this->resolve->execute($request, $actor, Status::Approved, $reason);
     }
 
-    public function reject(Request $request, Model&GivesApprovals $actor): Request
+    public function reject(Request $request, Model&GivesApprovalsInterface $actor, ?string $reason = null): Request
     {
-        return $this->resolve->execute($request, $actor, Status::Rejected);
+        return $this->resolve->execute($request, $actor, Status::Rejected, $reason);
     }
 
-    public function reopen(Request $request, Model&GivesApprovals $actor): Request
+    public function reopen(Request $request, Model&GivesApprovalsInterface $actor, ?string $reason = null): Request
     {
-        return $this->resolve->execute($request, $actor, Status::New);
+        return $this->resolve->execute($request, $actor, Status::New, $reason);
     }
 
     public function cancel(Request $request): Request

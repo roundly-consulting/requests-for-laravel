@@ -8,6 +8,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Approval engine
+    |--------------------------------------------------------------------------
+    |
+    | Request approvals run on roundly-consulting/approvals-for-laravel. The
+    | approval mechanics — rules (unanimous / quorum / any / weighted), staged
+    | pipelines, delegation, expiry, and named workflow presets — are configured
+    | in config/approvals.php. Publish it with:
+    |
+    |     php artisan vendor:publish --tag="approvals-config"
+    |
+    */
+
+    /*
+    |--------------------------------------------------------------------------
     | Request model
     |--------------------------------------------------------------------------
     |

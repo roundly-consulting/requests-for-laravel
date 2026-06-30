@@ -11,8 +11,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Collection;
-use RoundlyConsulting\Requests\Approvals\Concerns\HasApprovals;
-use RoundlyConsulting\Requests\Approvals\Contracts\HasApprovals as HasApprovalsContract;
+use RoundlyConsulting\Approvals\Interfaces\RequiresApprovalInterface;
+use RoundlyConsulting\Approvals\Traits\RequiresApproval;
 use RoundlyConsulting\Requests\Database\Factories\RequestFactory;
 use RoundlyConsulting\Requests\Enums\Status;
 
@@ -41,12 +41,13 @@ use RoundlyConsulting\Requests\Enums\Status;
  * @method static Builder<static> expiringBefore(CarbonInterface $moment)
  * @method static Builder<static> authoredBy(Model $author)
  */
-class Request extends Model implements HasApprovalsContract
+class Request extends Model implements RequiresApprovalInterface
 {
-    use HasApprovals;
-
     /** @use HasFactory<RequestFactory> */
     use HasFactory;
+
+    /** Drives the request approval flow through the approvals-for-laravel engine. */
+    use RequiresApproval;
 
     use SoftDeletes;
 
@@ -56,26 +57,6 @@ class Request extends Model implements HasApprovalsContract
     public function author(): MorphTo
     {
         return $this->morphTo();
-    }
-
-    /**
-     * Whether every actor in $ids (of the given morph $type) has approved this request.
-     *
-     * @param  array<int, int|string>  $ids
-     */
-    public function hasBeenApprovedByAll(string $type, array $ids): bool
-    {
-        if ($ids === []) {
-            return true;
-        }
-
-        $approved = $this->approvals()
-            ->where('actor_type', $type)
-            ->whereIn('actor_id', $ids)
-            ->distinct()
-            ->count('actor_id');
-
-        return $approved === count(array_unique($ids));
     }
 
     /**
