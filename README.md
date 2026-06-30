@@ -9,13 +9,20 @@
 # Requests for Laravel
 
 Requests from entities with approvals. This package models a **request** (a claim or
-application) submitted by an entity that needs one or more approvers to sign off before it is
-resolved. A request only flips to `Approved` once **every** required approver has approved it.
+application) submitted by an entity that needs sign-off before it is resolved. The approval
+flow runs on [`approvals-for-laravel`](https://github.com/roundly-consulting/approvals-for-laravel):
+configurable rules (**unanimous / quorum / any / weighted**), **multi-stage pipelines**,
+**named workflow presets**, **delegation**, per-decision reason + audit trail, and approval
+expiry — while `requests` keeps its own `Status` lifecycle, events, and `Requests` facade.
 
 ## Requirements
 
 - PHP `^8.4`
 - Laravel `^12.0` or `^13.0`
+- [`roundly-consulting/approvals-for-laravel`](https://github.com/roundly-consulting/approvals-for-laravel) (the approval engine)
+- [`roundly-consulting/enums-for-laravel`](https://github.com/roundly-consulting/enums-for-laravel) (enum helpers on `Status`)
+
+Both are hard dependencies and install automatically.
 
 ## Installation
 
@@ -23,22 +30,25 @@ resolved. A request only flips to `Approved` once **every** required approver ha
 composer require roundly-consulting/requests-for-laravel
 ```
 
-Publish and run the migrations:
+Publish and run the migrations (the approvals engine ships its own):
 
 ```bash
 php artisan vendor:publish --tag="requests-migrations"
+php artisan vendor:publish --tag="approvals-migrations"
 php artisan migrate
 ```
 
-Optionally publish the config file or translations:
+Optionally publish the config files or translations:
 
 ```bash
 php artisan vendor:publish --tag="requests-config"
+php artisan vendor:publish --tag="approvals-config"
 php artisan vendor:publish --tag="requests-translations"
 ```
 
-The package ships two tables: `requests` and `approvals`. Both migrations are auto-loaded, so
-the package works without publishing — publish only if you want to customise the schema.
+`requests` owns the `requests` table; the `approvals`, `approval_requests`,
+`approval_request_stages`, and `approval_delegations` tables are owned by the approvals
+engine. All migrations are auto-loaded, so the package works without publishing.
 
 ## Configuration
 
@@ -66,34 +76,34 @@ return [
   polymorphic `author`, a `Status` enum, free-form `meta`, a `require_approvals_from` list of
   approver ids, and an optional `expires_at`. Soft-deletable.
 - **Status** (`RoundlyConsulting\Requests\Enums\Status`) — `New`, `Approved`, `Rejected`,
-  `Cancelled`, `Expired`. Carries `isOpen()`, `isTerminal()`, `label()`, and
-  `canTransitionTo()`.
-- **Approvals** — a request `HasApprovals`; any actor model that `GivesApprovals` can toggle
-  an approval on a request. A request is only resolved to `Approved` once every actor in
-  `require_approvals_from` has approved it.
+  `Cancelled`, `Expired`. Carries `isOpen()`, `isTerminal()`, `canTransitionTo()`, plus the
+  shared enum helpers from `enums-for-laravel` (`labels()`, `options()`, `validationRule()`,
+  `label()`, …).
+- **Approval engine** — a `Request` is an approvals **subject** (`RequiresApproval`). Declaring
+  `requireApprovalsFrom([...])` opens an `ApprovalRequest`; its **rule** decides when the bar is
+  met. Engine resolutions are mirrored back onto the request's `Status` by a listener, so the
+  outcome moves the request and fires the requests events no matter how the decision arrived.
 
 ## Usage
 
 ### Make an actor able to give approvals
 
-Any model (typically your `User`) that should approve requests implements the contract and
-uses the trait:
+Any model (typically your `User`) that should approve requests uses the approvals engine's
+actor trait and interface:
 
 ```php
 use Illuminate\Database\Eloquent\Model;
-use RoundlyConsulting\Requests\Approvals\Concerns\GivesApprovals;
-use RoundlyConsulting\Requests\Approvals\Contracts\GivesApprovals as GivesApprovalsContract;
+use RoundlyConsulting\Approvals\Interfaces\GivesApprovalsInterface;
+use RoundlyConsulting\Approvals\Traits\GivesApprovals;
 
-class User extends Model implements GivesApprovalsContract
+class User extends Model implements GivesApprovalsInterface
 {
     use GivesApprovals;
 }
 ```
 
-> Note the trait/contract split: the **approver** side lives under
-> `RoundlyConsulting\Requests\Approvals\Concerns` / `…\Approvals\Contracts`, while the
-> **author** side (below) lives under the top-level `RoundlyConsulting\Requests\Concerns` /
-> `…\Contracts`.
+The actor gains the full approvals API: `approve($model, $reason)`, `reject($model, $reason)`,
+`cancelApproval($model)`, `delegateApprovalsTo($other)`, `hasApproved($model)`, and more.
 
 ### Make a model able to author requests
 
@@ -156,22 +166,109 @@ $request = (new CreateRequest())->execute(new CreateRequestDto(
 ```php
 use RoundlyConsulting\Requests\Facades\Requests;
 
-Requests::approve($request, $alice); // 1 of 2 — stays New
-Requests::approve($request, $bob);   // 2 of 2 — becomes Approved
-Requests::reject($request, $carol);  // rejects and revokes prior approval
-Requests::reopen($request, $alice);  // back to New, revokes approval
+Requests::approve($request, $alice);                       // 1 of 2 — stays New
+Requests::approve($request, $bob, reason: 'Looks good');   // 2 of 2 — becomes Approved
+Requests::reject($request, $carol, reason: 'Out of policy');
+Requests::reopen($request, $alice);                        // back to New, revokes the decision
 ```
 
-The underlying `ResolveRequest` action is unchanged and still accepts a `Status` directly:
+Every decision is recorded through the approvals engine with its actor, reason, and timestamp,
+so you get a full audit trail for free. The underlying `ResolveRequest` action also accepts a
+`Status` and an optional reason directly:
 
 ```php
 use RoundlyConsulting\Requests\Actions\ResolveRequest;
 
-(new ResolveRequest())->execute($request, $alice, Status::Approved);
+(new ResolveRequest())->execute($request, $alice, Status::Approved, reason: 'Signed off');
 ```
 
-- Approving with no `require_approvals_from` resolves immediately.
-- A request only flips to `Approved` once **all** required approvers have approved.
+- A request with **no** declared approvers resolves immediately.
+- Otherwise the approval rule decides when the request flips (default **unanimous** — every
+  declared approver must approve, matching the original behaviour).
+
+### Approval rules
+
+Pick a rule (and quorum, where relevant) on the builder:
+
+```php
+use RoundlyConsulting\Approvals\Enums\ApprovalRule;
+
+// Any 2 of 3 managers (first-past-the-post quorum):
+Requests::make()
+    ->requireApprovalsFrom([$a, $b, $c])
+    ->rule(ApprovalRule::Quorum)
+    ->quorum(2)
+    ->create();
+
+// First approver wins:
+Requests::make()->requireApprovalsFrom([$a, $b])->rule(ApprovalRule::Any)->create();
+
+// Weighted — a senior approver (ProvidesApprovalWeight) clears the threshold alone:
+Requests::make()
+    ->requireApprovalsFrom([$senior, $junior])
+    ->rule(ApprovalRule::Weighted)
+    ->quorum(3)
+    ->create();
+```
+
+### Multi-stage pipelines
+
+Define a sequential pipeline; each stage opens only once the previous one clears:
+
+```php
+use RoundlyConsulting\Approvals\DataTransferObjects\StageDefinition;
+use RoundlyConsulting\Approvals\Enums\ApprovalRule;
+
+$request = Requests::make()
+    ->title('Payout')
+    ->stages([
+        new StageDefinition([$manager],  ApprovalRule::Unanimous, name: 'manager'),
+        new StageDefinition([$finance],  ApprovalRule::Unanimous, name: 'finance'),
+        new StageDefinition([$director], ApprovalRule::Unanimous, name: 'director'),
+    ])
+    ->create();
+
+$request->currentStage()?->name; // 'manager'
+```
+
+By default a rejection in any stage rejects the whole request; call
+`->rejectOnStageRejection(false)` to skip the rejected stage and continue.
+
+### Named workflow presets
+
+Reuse rule/quorum/stage wiring from `config('approvals.workflows')`:
+
+```php
+// config/approvals.php
+'workflows' => [
+    'payout' => ['rule' => 'quorum', 'quorum' => 2, 'required_approvers' => 3],
+    'release' => ['stages' => [
+        ['rule' => 'unanimous', 'required_approvers' => 2, 'name' => 'engineering'],
+        ['rule' => 'any', 'required_approvers' => 1, 'name' => 'product'],
+    ]],
+],
+```
+
+```php
+// Flat preset — supply the approvers:
+Requests::make()->workflow('payout')->requireApprovalsFrom([$a, $b, $c])->create();
+
+// Staged preset — one approver group per stage:
+Requests::make()->workflow('release')->stageApprovers([[$eng1, $eng2], [$product]])->create();
+```
+
+### Delegated approvers
+
+An approver on leave can hand their authority to a stand-in via the approvals engine:
+
+```php
+use RoundlyConsulting\Approvals\Facades\Approvals;
+
+$alice->delegateApprovalsTo($bob)->until(now()->addWeek());
+// or: Approvals::delegate($alice, $bob);
+```
+
+While the delegation is active, `Requests::approve($request, $bob)` counts as Alice's decision.
 
 ### Cancel and expire
 
@@ -193,7 +290,7 @@ Expired    -> New (reopen)
 Cancelled  -> (terminal)
 ```
 
-With the flag off (the default) behaviour is identical to previous versions.
+With the flag off (the default) the guard is skipped and decisions resolve directly.
 
 ### Auto-expiry & the prune command
 
@@ -207,7 +304,8 @@ php artisan requests:expire --chunk=1000
 ```
 
 Only **open** (New) requests past their `expires_at` are expired; approved/rejected requests
-are untouched.
+are untouched. The command also lapses any pending approval **decisions** whose own expiry has
+passed (via `Approvals::expire()`).
 
 ### Query scopes
 
@@ -228,10 +326,18 @@ Request::query()->authoredBy($user)->get();
 ### Inspecting approvals
 
 ```php
-$request->hasBeenApprovedBy($alice);   // bool
-$alice->hasApproved($request);         // bool
-$alice->toggleApproval($request);      // true = added, false = removed
-$request->isExpired();                 // open and past its deadline
+$alice->hasApproved($request);          // bool
+$alice->hasRejected($request);          // bool
+$request->isApproved();                 // engine resolved to approved
+$request->isPendingApproval();          // still awaiting decisions
+$request->currentApprovalStatus();      // ApprovalStatus enum
+$request->currentStage();               // open stage of a pipeline, if any
+$request->isExpired();                  // open and past its deadline
+
+$progress = $request->approvalProgress();
+$progress?->approved;                   // e.g. 2
+$progress?->required;                   // e.g. 3
+$progress?->percentage();               // 67
 ```
 
 ### Events
@@ -281,6 +387,19 @@ $fake->assertNothingCreated();
 
 Available assertions: `assertCreated()`, `assertNothingCreated()`, `assertApproved()`,
 `assertRejected()`, `assertReopened()`, `assertCancelled()`, `assertExpired()`.
+
+## Integrates with
+
+This package builds on other roundly-consulting packages:
+
+- **[`approvals-for-laravel`](https://github.com/roundly-consulting/approvals-for-laravel)** —
+  powers the whole approval flow: rules (unanimous / quorum / any / weighted), multi-stage
+  pipelines, named workflow presets, delegation, per-decision reason + audit, and expiry. A
+  `Request` is an approvals subject (`RequiresApproval`); resolutions are synced back to the
+  request `Status` by `SyncRequestStatusFromApproval`.
+- **[`enums-for-laravel`](https://github.com/roundly-consulting/enums-for-laravel)** — the
+  `Status` enum adopts the shared `Helpers` trait for `labels()`, `options()`,
+  `validationRule()`, `values()`, and per-case `label()`.
 
 ## Testing
 
