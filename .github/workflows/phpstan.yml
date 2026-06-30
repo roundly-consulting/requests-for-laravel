@@ -17,8 +17,10 @@ jobs:
           php-version: '8.4'
           coverage: none
 
-      - name: Install dependencies
-        run: composer install --prefer-dist --no-interaction
+      - name: Install composer dependencies
+        uses: ramsey/composer-install@v4
+        env:
+          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.COMPOSER_AUTH_TOKEN }}"}}'
 
       - name: Run PHPStan
         run: vendor/bin/phpstan analyse --no-progress --error-format=github
