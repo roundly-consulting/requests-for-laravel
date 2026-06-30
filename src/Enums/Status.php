@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Requests\Enums;
 
+use RoundlyConsulting\Enums\Helpers;
+
 enum Status: string
 {
+    use Helpers;
+
     case New = 'New';
     case Approved = 'Approved';
     case Rejected = 'Rejected';
@@ -30,14 +34,6 @@ enum Status: string
     public function isOpen(): bool
     {
         return $this === self::New;
-    }
-
-    /**
-     * A translatable, human-readable label suitable for UI and reports.
-     */
-    public function label(): string
-    {
-        return (string) trans('requests::messages.status.'.$this->value);
     }
 
     /**
