@@ -13,6 +13,7 @@ use RoundlyConsulting\Requests\Contracts\CreatesRequests;
 use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
 use RoundlyConsulting\Requests\Events\RequestCreated;
 use RoundlyConsulting\Requests\Models\Request;
+use RoundlyConsulting\Requests\Support\RequestModel;
 
 final class CreateRequest implements CreatesRequests
 {
@@ -101,8 +102,7 @@ final class CreateRequest implements CreatesRequests
      */
     private function newModelInstance(array $attributes): Request
     {
-        /** @var class-string<Request> $model */
-        $model = config('requests.model', Request::class);
+        $model = RequestModel::class();
 
         return new $model($attributes);
     }

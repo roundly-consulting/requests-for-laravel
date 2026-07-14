@@ -7,7 +7,7 @@ namespace RoundlyConsulting\Requests\Commands;
 use Illuminate\Console\Command;
 use RoundlyConsulting\Approvals\Facades\Approvals;
 use RoundlyConsulting\Requests\Actions\ExpireRequest;
-use RoundlyConsulting\Requests\Models\Request;
+use RoundlyConsulting\Requests\Support\RequestModel;
 
 final class ExpireRequestsCommand extends Command
 {
@@ -22,7 +22,7 @@ final class ExpireRequestsCommand extends Command
 
         $count = 0;
 
-        $this->resolveModel()::query()
+        RequestModel::class()::query()
             ->expired()
             ->chunkById($chunk, function ($requests) use ($expire, $dryRun, &$count): void {
                 foreach ($requests as $request) {
@@ -48,14 +48,5 @@ final class ExpireRequestsCommand extends Command
         }
 
         return self::SUCCESS;
-    }
-
-    /** @return class-string<Request> */
-    private function resolveModel(): string
-    {
-        /** @var class-string<Request> $model */
-        $model = config('requests.model', Request::class);
-
-        return $model;
     }
 }
