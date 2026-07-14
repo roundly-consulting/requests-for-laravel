@@ -29,13 +29,18 @@ abstract class TestCase extends Orchestra
 
         $this->loadApprovalsSchema();
 
-        foreach (glob(__DIR__.'/../database/migrations/*.php') ?: [] as $file) {
-            (require $file)->up();
-        }
-
         Schema::create('users', function (Blueprint $table): void {
             $table->id();
         });
+    }
+
+    /**
+     * The package publishes its migrations and never auto-loads them, so the
+     * suite has to run them itself.
+     */
+    protected function defineDatabaseMigrations(): void
+    {
+        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
     }
 
     /**

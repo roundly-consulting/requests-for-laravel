@@ -30,7 +30,9 @@ Both are hard dependencies and install automatically.
 composer require roundly-consulting/requests-for-laravel
 ```
 
-Publish and run the migrations (the approvals engine ships its own):
+Publish and run the migrations. The package does **not** auto-load them — publishing copies
+the `requests` migration into your `database/migrations`, where you own it, so a bare
+`php artisan migrate` before publishing creates nothing:
 
 ```bash
 php artisan vendor:publish --tag="requests-migrations"
@@ -48,7 +50,7 @@ php artisan vendor:publish --tag="requests-translations"
 
 `requests` owns the `requests` table; the `approvals`, `approval_requests`,
 `approval_request_stages`, and `approval_delegations` tables are owned by the approvals
-engine. All migrations are auto-loaded, so the package works without publishing.
+engine, so publish its migrations too.
 
 ## Configuration
 
