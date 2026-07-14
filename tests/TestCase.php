@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Requests\Tests;
 
-use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Orchestra\Testbench\TestCase as Orchestra;
@@ -27,45 +26,29 @@ abstract class TestCase extends Orchestra
     {
         config()->set('database.default', 'testing');
 
-        $this->loadApprovalsSchema();
-
         Schema::create('users', function (Blueprint $table): void {
             $table->id();
         });
     }
 
     /**
-     * The package publishes its migrations and never auto-loads them, so the
-     * suite has to run them itself.
+     * Neither package auto-loads its migrations (both publish them), so the suite
+     * runs them itself: the approvals engine tables back the request approval flow.
      */
     protected function defineDatabaseMigrations(): void
     {
+        $this->loadMigrationsFrom($this->approvalsMigrationsPath());
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
     }
 
     /**
-     * Run the approvals engine migrations in dependency order (its tables back the
-     * request approval flow now that the native engine is gone).
+     * The approvals package's migrations directory, resolved from wherever composer
+     * installed it.
      */
-    private function loadApprovalsSchema(): void
+    private function approvalsMigrationsPath(): string
     {
         $base = dirname((string) (new ReflectionClass(ApprovalsServiceProvider::class))->getFileName(), 2);
 
-        $migrations = [
-            'create_approvals_table',
-            'create_approval_requests_table',
-            'add_v11_columns_to_approvals_table',
-            'add_staging_to_approval_requests_table',
-            'create_approval_request_stages_table',
-            'create_approval_delegations_table',
-        ];
-
-        foreach ($migrations as $name) {
-            $migration = require "{$base}/database/migrations/{$name}.php";
-
-            if ($migration instanceof Migration) {
-                $migration->up();
-            }
-        }
+        return $base.'/database/migrations';
     }
 }
