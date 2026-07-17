@@ -7,6 +7,7 @@ namespace RoundlyConsulting\Requests;
 use Illuminate\Foundation\AliasLoader;
 use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\Approvals\Events\ApprovalRequestResolved;
+use RoundlyConsulting\PackageToolkit\Concerns\RegistersBlueprintMacros;
 use RoundlyConsulting\PackageToolkit\Package;
 use RoundlyConsulting\PackageToolkit\PackageServiceProvider;
 use RoundlyConsulting\Requests\Commands\ExpireRequestsCommand;
@@ -16,6 +17,8 @@ use RoundlyConsulting\Requests\Support\RequestModel;
 
 final class RequestsServiceProvider extends PackageServiceProvider
 {
+    use RegistersBlueprintMacros;
+
     public function configurePackage(Package $package): void
     {
         $package
@@ -44,6 +47,10 @@ final class RequestsServiceProvider extends PackageServiceProvider
     public function boot(): void
     {
         parent::boot();
+
+        // The migrations' key-type-aware morph columns are macros, so they must
+        // exist before a host runs `php artisan migrate`.
+        $this->registerBlueprintMacros();
 
         $this->registerFacadeAlias();
 
