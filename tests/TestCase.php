@@ -4,17 +4,26 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Requests\Tests;
 
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
-use Orchestra\Testbench\TestCase as Orchestra;
-use ReflectionClass;
+use Illuminate\Support\ServiceProvider;
 use RoundlyConsulting\Approvals\ApprovalsServiceProvider;
 use RoundlyConsulting\Requests\RequestsServiceProvider;
+use RoundlyConsulting\Testing\PackageTestCase;
 
-abstract class TestCase extends Orchestra
+abstract class TestCase extends PackageTestCase
 {
-    /** @return array<int, class-string> */
-    protected function getPackageProviders($app): array
+    /**
+     * Every provider the suite really needs, in registration order. Approvals is a hard
+     * `require` a host would auto-discover, and the request lifecycle genuinely runs on
+     * it (`SyncRequestStatusFromApproval` listens for `ApprovalRequestResolved`), so
+     * naming it is what makes the test env an install rather than a fiction.
+     *
+     * `enums-for-laravel` and `package-toolkit-for-laravel` are hard `require`s too, but
+     * the first ships no provider and the second is a base class rather than a registered
+     * package — so the list is genuinely two entries.
+     *
+     * @return list<class-string<ServiceProvider>>
+     */
+    protected function packageProviders(): array
     {
         return [
             ApprovalsServiceProvider::class,
@@ -22,33 +31,29 @@ abstract class TestCase extends Orchestra
         ];
     }
 
-    protected function getEnvironmentSetUp($app): void
-    {
-        config()->set('database.default', 'testing');
-
-        Schema::create('users', function (Blueprint $table): void {
-            $table->id();
-        });
-    }
-
     /**
-     * Neither package auto-loads its migrations (both publish them), so the suite
-     * runs them itself: the approvals engine tables back the request approval flow.
+     * The migrations, named by **provider class** — never by filename.
+     *
+     * This replaces a hand-rolled `defineDatabaseMigrations()` that reflected on
+     * ApprovalsServiceProvider to find its package root and then guessed
+     * `/database/migrations` beneath it: exactly what the base case's
+     * `LoadsProviderMigrations` concern does once, correctly, for the whole fleet.
+     *
+     * The `users` fixture table used to be built by `Schema::create()` inside
+     * `getEnvironmentSetUp()` — i.e. during *environment* configuration, before the
+     * migrator ever ran, and outside anything that resets it. On in-memory SQLite that
+     * was invisible (the database dies with the connection); on a real engine the table
+     * survives teardown and the next test dies creating it again. It is a fixture
+     * migration now, so the base case's drop-and-remigrate reset owns it like any other.
+     *
+     * @return list<class-string<ServiceProvider>|string>
      */
-    protected function defineDatabaseMigrations(): void
+    protected function migrationSources(): array
     {
-        $this->loadMigrationsFrom($this->approvalsMigrationsPath());
-        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
-    }
-
-    /**
-     * The approvals package's migrations directory, resolved from wherever composer
-     * installed it.
-     */
-    private function approvalsMigrationsPath(): string
-    {
-        $base = dirname((string) (new ReflectionClass(ApprovalsServiceProvider::class))->getFileName(), 2);
-
-        return $base.'/database/migrations';
+        return [
+            ApprovalsServiceProvider::class,
+            RequestsServiceProvider::class,
+            __DIR__.'/database/migrations',
+        ];
     }
 }
