@@ -18,7 +18,7 @@ use RoundlyConsulting\Requests\Models\Request;
  * Container-bound entry point. Thin sugar over the package actions, exposed via
  * the Requests facade.
  */
-class RequestManager
+final class RequestManager
 {
     public function __construct(
         private readonly CreateRequest $create,
