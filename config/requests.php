@@ -34,6 +34,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Key Type
+    |--------------------------------------------------------------------------
+    |
+    | The key type used for the polymorphic author column. Use "uuid" or "ulid"
+    | when the models that column points at use UUID/ULID primary keys, otherwise
+    | leave it as "bigint". Your morph targets must share one key type; set this
+    | to match. Any unrecognized value falls back to "bigint".
+    |
+    | Supported: "bigint", "uuid", "ulid"
+    |
+    */
+
+    'key_type' => env('REQUESTS_KEY_TYPE', 'bigint'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Enforce status transitions
     |--------------------------------------------------------------------------
     |
