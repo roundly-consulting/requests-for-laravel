@@ -18,8 +18,8 @@ return new class extends Migration
             $table->string('type')->nullable();
             $table->string('title')->nullable();
             $table->text('description')->nullable();
-            $table->json('meta')->nullable();
-            $table->json('require_approvals_from')->nullable();
+            $table->jsonb('meta')->nullable();
+            $table->jsonb('require_approvals_from')->nullable();
             $table->timestamp('expires_at')->nullable()->index();
             $table->timestamps();
             $table->softDeletes();
