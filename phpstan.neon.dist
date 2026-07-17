@@ -1,5 +1,7 @@
 parameters:
     level: 7
+    configDirectories:
+        - config
     paths:
         - src
         - database
