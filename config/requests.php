@@ -70,6 +70,8 @@ return [
     | When set (in minutes) and a request is created without an explicit expiry,
     | the request is stamped with an expires_at of now() plus this many minutes.
     | Null means requests never expire unless an expiry is provided explicitly.
+    | A numeric string (an env() value) works too; anything but a positive
+    | whole number throws an InvalidConfigurationException.
     |
     */
 

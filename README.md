@@ -70,6 +70,7 @@ engine, so publish its migrations too.
 ```php
 return [
     'model' => RoundlyConsulting\Requests\Models\Request::class,
+    'key_type' => env('REQUESTS_KEY_TYPE', 'bigint'),
     'enforce_transitions' => false,
     'default_ttl' => null,
     'register_facade_alias' => true,
@@ -79,23 +80,29 @@ return [
 | Key | Type | Default | Purpose |
 |---|---|---|---|
 | `model` | `class-string` | `Request::class` | The request model resolved by `CreateRequest`. Point it at a subclass to extend behaviour. |
+| `key_type` | `string` | `'bigint'` (env `REQUESTS_KEY_TYPE`) | Key type of the polymorphic `author` column: `bigint`, `uuid` or `ulid`. Match the primary keys of the models that author requests; any other value falls back to `bigint`. Read when the migration runs, so set it before `php artisan migrate`. |
 | `enforce_transitions` | `bool` | `false` | When `true`, illegal status moves (e.g. re-approving a rejected request) throw `InvalidStatusTransition`. Off by default to preserve the original toggle behaviour. |
-| `default_ttl` | `?int` | `null` | When set (in minutes), requests created without an explicit expiry are stamped with `now()->addMinutes(ttl)`. `null` means requests never expire automatically. |
+| `default_ttl` | `?int` | `null` | When set (in minutes), requests created without an explicit expiry are stamped with `now()->addMinutes(ttl)`. `null` (or empty) means requests never expire automatically. Anything but a positive whole number throws `InvalidConfigurationException`. |
 | `register_facade_alias` | `bool` | `true` | Register the short `Requests` class alias for the facade. Skipped automatically if the host has already aliased the name. The fully-qualified facade always works. |
+
+Values from `env()` arrive as strings and are read accordingly: `'60'` is a 60-minute TTL, and
+`'true'`/`'1'`/`'on'`/`'yes'` (or `'false'`/`'0'`/`'off'`/`'no'`) switch the two flags.
 
 ## Concepts
 
 - **Request** (`RoundlyConsulting\Requests\Models\Request`) — the claim/application. Has a
-  polymorphic `author`, a `Status` enum, free-form `meta`, a `require_approvals_from` list of
-  approver ids, and an optional `expires_at`. Soft-deletable.
+  polymorphic `author`, a `Status` enum, free-form `meta`, a `require_approvals_from` record of
+  the declared approvers' keys, and an optional `expires_at`. Soft-deletable.
 - **Status** (`RoundlyConsulting\Requests\Enums\Status`) — `New`, `Approved`, `Rejected`,
   `Cancelled`, `Expired`. Carries `isOpen()`, `isTerminal()`, `canTransitionTo()`, plus the
   shared enum helpers from `enums-for-laravel` (`labels()`, `options()`, `validationRule()`,
   `label()`, …).
 - **Approval engine** — a `Request` is an approvals **subject** (`RequiresApproval`). Declaring
-  `requireApprovalsFrom([...])` opens an `ApprovalRequest`; its **rule** decides when the bar is
-  met. Engine resolutions are mirrored back onto the request's `Status` by a listener, so the
-  outcome moves the request and fires the requests events no matter how the decision arrived.
+  `requireApprovalsFrom([...])` opens an approval round (an `ApprovalRequest`) that **names**
+  those approvers: only they, or someone they delegated to, may decide it. Its **rule** decides
+  when the bar is met. Engine resolutions are mirrored back onto the request's `Status` by a
+  listener, so the outcome moves the request and fires the requests events no matter how the
+  decision arrived.
 
 ## Usage
 
@@ -150,7 +157,7 @@ $request = Requests::make()
     ->title('Expense reimbursement')
     ->description('Travel costs for the client visit.')
     ->meta(['ip' => request()->ip()])
-    ->requireApprovalsFrom([$alice, $bob])   // models OR ids — normalised to ids
+    ->requireApprovalsFrom([$alice, $bob])   // saved approver models — only they may decide
     ->expiresAt(now()->addDays(7))
     ->create();
 ```
@@ -164,6 +171,7 @@ the same API with dependency injection, or run an action directly:
 use RoundlyConsulting\Requests\Actions\CreateRequest;
 use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
 use RoundlyConsulting\Requests\Enums\Status;
+use RoundlyConsulting\Requests\Models\Request;
 use RoundlyConsulting\Requests\RequestManager;
 
 final class SubmitClaim
@@ -182,12 +190,15 @@ $request = app(CreateRequest::class)->execute(new CreateRequestDto(
     author: $user,
     title: 'Expense reimbursement',
     meta: collect(['ip' => request()->ip()]),
-    requireApprovalsFrom: collect([$alice->id, $bob->id]),
+    approvers: [$alice, $bob],
     expiresAt: now()->addDays(7),
 ));
 ```
 
-`CreateRequest` dispatches a `RequestCreated` event.
+Approvers must be **saved models**: a bare id names no model type, so it could never be enforced,
+and `requireApprovalsFrom()` refuses one with `InvalidApprover`. The request and its approval
+round are written together — if the round can't open (an unsaved approver, an unknown workflow
+preset), no request is left behind. `CreateRequest` dispatches a `RequestCreated` event.
 
 | Facade / manager method | Action |
 |---|---|
@@ -203,10 +214,13 @@ $request = app(CreateRequest::class)->execute(new CreateRequestDto(
 ```php
 use RoundlyConsulting\Requests\Facades\Requests;
 
-Requests::approve($request, $alice);                       // 1 of 2 — stays New
-Requests::approve($request, $bob, reason: 'Looks good');   // 2 of 2 — becomes Approved
-Requests::reject($request, $carol, reason: 'Out of policy');
-Requests::reopen($request, $alice);                        // back to New, revokes the decision
+$request = Requests::make()->requireApprovalsFrom([$alice, $bob])->create();
+
+Requests::approve($request, $alice);                        // 1 of 2 — stays New
+Requests::reject($request, $bob, reason: 'Out of policy');  // unanimous: one rejection rejects it
+Requests::reopen($request, $alice);                         // back to New — a fresh approval round opens
+Requests::approve($request, $alice);
+Requests::approve($request, $bob, reason: 'Looks good');    // 2 of 2 — becomes Approved
 ```
 
 Every decision is recorded through the approvals engine with its actor, reason, and timestamp,
@@ -222,6 +236,16 @@ app(ResolveRequest::class)->execute($request, $alice, Status::Approved, reason: 
 - A request with **no** declared approvers resolves immediately.
 - Otherwise the approval rule decides when the request flips (default **unanimous** — every
   declared approver must approve, matching the original behaviour).
+- Only the declared approvers — or someone they delegated to — may decide. Anyone else gets
+  `RoundlyConsulting\Approvals\Exceptions\UnauthorizedApprovalException` from
+  `Requests::approve($request, $mallory)`, and nothing is recorded. That holds for decisions made
+  straight through the approvals engine too (`$mallory->approve($request)`).
+- Once the approval round has resolved, a new decision would count towards nothing, so
+  `approve()` / `reject()` throw `RequestAlreadyResolved` until the request is reopened.
+- `reopen()` withdraws the actor's own decision and moves the request back to `New`. If the round
+  had already resolved, a **fresh round** opens with the same approvers, rule, stages or preset,
+  and everyone decides again — earlier decisions don't carry over. A declared approver that no
+  longer exists makes the reopen throw `InvalidApprover` (nothing changes).
 
 ### Approval rules
 
@@ -314,6 +338,15 @@ Requests::cancel($request);   // status = Cancelled
 Requests::expire($request);   // status = Expired
 ```
 
+Both also close the request's open approval round, so a late decision — through `Requests` or
+straight through the approvals engine — can't resolve it and pull the request back. The round is
+closed as `cancelled` / `expired` and announced with the engine's `ApprovalRequestResolved` event.
+
+A cancelled or expired request is **closed**, whatever `enforce_transitions` says: a `Cancelled`
+request is final, and an `Expired` one can only be reopened (`Requests::reopen()`). Any other
+action on it throws `RequestAlreadyResolved`. Cancelling an already-cancelled request, or expiring
+an already-expired one, does nothing.
+
 ### Guarded transitions (opt-in)
 
 Set `requests.enforce_transitions` to `true` to enforce the lifecycle graph. Illegal moves
@@ -327,7 +360,9 @@ Expired    -> New (reopen)
 Cancelled  -> (terminal)
 ```
 
-With the flag off (the default) the guard is skipped and decisions resolve directly.
+With the flag off (the default) the guard is skipped and decisions resolve directly — except
+that a closed request (`Cancelled`, or `Expired` short of a reopen) stays closed either way.
+`expire()` is guarded too: with the flag on, expiring an approved request throws.
 
 Ask the graph before you act — it answers the same way whether or not enforcement is on:
 
@@ -354,8 +389,8 @@ php artisan requests:expire --dry-run  # report only, change nothing
 php artisan requests:expire --chunk=1000
 ```
 
-Only **open** (New) requests past their `expires_at` are expired; approved/rejected requests
-are untouched. The command also lapses any pending approval **decisions** whose own expiry has
+Only **open** (New) requests past their `expires_at` are expired, and their approval rounds are
+closed with them; approved/rejected requests are untouched. The command also lapses any pending approval **decisions** whose own expiry has
 passed (via `Approvals::expire()`); `Requests::expireDue()` expires requests only, so call
 `Approvals::expire()` yourself when you sweep from code.
 
@@ -406,7 +441,9 @@ Listen for these package events:
 | `RequestCancelled` | `Request $request` |
 | `RequestExpired` | `Request $request` |
 
-All live under `RoundlyConsulting\Requests\Events`.
+All live under `RoundlyConsulting\Requests\Events`. They fire however the change arrived — a
+round the approvals engine lapses (its own expiry, `Approvals::expire()`) expires the request and
+fires `RequestStatusChanged` and `RequestExpired` too.
 
 ### Exceptions
 
@@ -415,7 +452,16 @@ can catch the whole hierarchy at once:
 
 - `InvalidStatusTransition` — thrown by the guard when `enforce_transitions` is on and a move
   is illegal (carries `$from` / `$to`).
-- `RequestAlreadyResolved` — for acting on a terminal request (carries `$status`).
+- `RequestAlreadyResolved` — thrown, whatever `enforce_transitions` says, for acting on a request
+  that can't take the action: any move out of `Cancelled`, anything but `reopen()` on an `Expired`
+  request, and `approve()` / `reject()` once the approval round has resolved (carries `$status`).
+- `InvalidApprover` — an approver that isn't an Eloquent model (a bare id), or a declared
+  approver that no longer exists when a reopened request replays its round.
+
+The approvals engine's own exceptions pass through unchanged — notably
+`UnauthorizedApprovalException` for an actor who isn't a declared approver, and
+`InvalidApprovalRequestException` for a round that can't open (an unsaved approver, flat
+approvers mixed with `stages()`, an unreachable quorum).
 
 Messages are translatable via the `requests::messages` namespace.
 

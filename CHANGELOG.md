@@ -15,11 +15,14 @@ Initial public release.
 - A fluent `Requests` facade (`Requests::make()->author(...)->requireApprovalsFrom(...)->create()`)
   plus Action classes and a DTO.
 - Approval flows on `approvals-for-laravel`: unanimous, quorum, any or weighted rules, with every
-  decision's actor, reason and time recorded.
+  decision's actor, reason and time recorded. Only the declared approvers (or their delegates)
+  may decide; anyone else gets `UnauthorizedApprovalException`.
 - Multi-stage approval pipelines via `stages()`, and named workflow presets via `workflow()`.
 - Delegated approvers: a stand-in's decision counts for the approver who delegated.
 - `Requests::approve()`, `reject()`, `reopen()`, `cancel()` and `expire()`, with optional guarded
-  transitions (`requests.enforce_transitions`).
+  transitions (`requests.enforce_transitions`). `reopen()` opens a fresh approval round once the
+  last one resolved; `cancel()` / `expire()` close the open round; a cancelled or expired request
+  stays closed (`RequestAlreadyResolved`).
 - Auto-expiry with a default TTL, `Requests::expireDue(dryRun:, chunk:)` (the `ExpireDueRequests`
   action) and the `requests:expire` command (`--dry-run`, `--chunk`) that wraps it.
 - `Requests::canTransition($request, $status)` asks the lifecycle graph whether a move is allowed.
@@ -38,6 +41,9 @@ Initial public release.
 - `RequestBuilder` takes the `RequestManager` instead of a `CreatesRequests` implementation; the
   `Contracts\CreatesRequests` interface is removed.
 - Adapted to the `approvals-for-laravel` API (`Approvals::request($subject)->workflow()->open()`).
+- Approvers are models: `CreateRequestDto::$approvers` replaces the id-only
+  `$requireApprovalsFrom`, and `requireApprovalsFrom()` refuses a bare id (`InvalidApprover`).
+- `requests.default_ttl` and the boolean flags accept `env()` strings.
 
 ### Fixed
 
