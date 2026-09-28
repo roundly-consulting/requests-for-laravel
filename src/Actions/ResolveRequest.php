@@ -27,6 +27,8 @@ final class ResolveRequest
     public function __construct(
         private readonly StatusGuard $guard = new StatusGuard,
         private readonly RestartApprovalRound $restart = new RestartApprovalRound,
+        private readonly CancelRequest $cancel = new CancelRequest,
+        private readonly ExpireRequest $expire = new ExpireRequest,
     ) {}
 
     public function execute(
@@ -35,6 +37,16 @@ final class ResolveRequest
         Status $status,
         ?string $reason = null,
     ): Request {
+        // Cancelling and expiring are lifecycle moves, not decisions: they run the
+        // actions that also close the approval round.
+        if ($status === Status::Cancelled) {
+            return $this->cancel->execute($request);
+        }
+
+        if ($status === Status::Expired) {
+            return $this->expire->execute($request);
+        }
+
         if ($this->enforcing()) {
             $this->guard->assert($request->status, $status);
         }
@@ -43,7 +55,6 @@ final class ResolveRequest
             Status::Approved => $this->approve($request, $actor, $reason),
             Status::Rejected => $this->reject($request, $actor, $reason),
             Status::New => $this->reopen($request, $actor, $reason),
-            default => $this->updateRequestStatus($request, $status),
         };
     }
 
