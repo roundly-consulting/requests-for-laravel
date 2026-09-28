@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\Approvals\Enums\ApprovalStatus;
 use RoundlyConsulting\Approvals\Events\ApprovalRequestResolved;
 use RoundlyConsulting\Approvals\Events\ApprovalStatusChanged;
+use RoundlyConsulting\Approvals\Models\ApprovalRequest;
 use RoundlyConsulting\Requests\Actions\ResolveRequest;
 use RoundlyConsulting\Requests\Enums\Status;
 use RoundlyConsulting\Requests\Events\RequestCancelled;
@@ -113,4 +114,32 @@ it('routes a raw cancelled or expired resolution through the lifecycle actions',
 
     expect($cancelled->approvalRequests()->firstOrFail()->status)->toBe(ApprovalStatus::Cancelled)
         ->and($expired->approvalRequests()->firstOrFail()->status)->toBe(ApprovalStatus::Expired);
+});
+
+it('keeps the outcome of a decision that resolved the round between the read and the close', function (): void {
+    $alice = User::create();
+
+    $request = Requests::make()->requireApprovalsFrom([$alice])->create();
+
+    // Simulate the interleaving: the round is read as pending, then a concurrent decision
+    // resolves it in the database before the close's conditional update runs.
+    $raced = false;
+    ApprovalRequest::retrieved(function (ApprovalRequest $round) use (&$raced): void {
+        if ($raced) {
+            return;
+        }
+
+        $raced = true;
+        ApprovalRequest::query()->whereKey($round->getKey())->update(['status' => ApprovalStatus::Approved->value]);
+    });
+
+    Event::fake([ApprovalRequestResolved::class]);
+
+    Requests::cancel($request);
+
+    Event::assertNotDispatched(ApprovalRequestResolved::class);
+
+    expect($raced)->toBeTrue()
+        ->and($request->approvalRequests()->firstOrFail()->status)->toBe(ApprovalStatus::Approved)
+        ->and($request->fresh()?->status)->toBe(Status::Cancelled);
 });
