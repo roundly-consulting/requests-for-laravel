@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Support\Collection;
 use RoundlyConsulting\Requests\Enums\Status;
+use RoundlyConsulting\Requests\Exceptions\InvalidApprover;
 use RoundlyConsulting\Requests\RequestBuilder;
 use RoundlyConsulting\Requests\RequestManager;
 use RoundlyConsulting\Requests\Tests\User;
@@ -17,13 +18,13 @@ it('defaults to a new request', function (): void {
     expect(builder()->toDto()->status)->toBe(Status::New);
 });
 
-it('normalises approver models to ids', function (): void {
+it('carries the approver models into the dto', function (): void {
     $alice = User::create();
     $bob = User::create();
 
     $dto = builder()->requireApprovalsFrom([$alice, $bob])->toDto();
 
-    expect($dto->requireApprovalsFrom?->all())->toBe([$alice->id, $bob->id]);
+    expect($dto->approvers)->toBe([$alice, $bob]);
 });
 
 it('accepts a single approver model', function (): void {
@@ -31,14 +32,22 @@ it('accepts a single approver model', function (): void {
 
     $dto = builder()->requireApprovalsFrom($alice)->toDto();
 
-    expect($dto->requireApprovalsFrom?->all())->toBe([$alice->id]);
+    expect($dto->approvers)->toBe([$alice]);
 });
 
-it('accepts raw approver ids', function (): void {
-    $dto = builder()->requireApprovalsFrom([1, 2])->toDto();
+it('accepts a collection of approver models', function (): void {
+    $alice = User::create();
 
-    expect($dto->requireApprovalsFrom?->all())->toBe([1, 2]);
+    $dto = builder()->requireApprovalsFrom(collect([$alice]))->toDto();
+
+    expect($dto->approvers)->toBe([$alice]);
 });
+
+it('refuses a bare approver id, which names no model type', function (): void {
+    $alice = User::create();
+
+    builder()->requireApprovalsFrom([$alice, 2]);
+})->throws(InvalidApprover::class, 'An approver must be an Eloquent model, int given');
 
 it('wraps array meta into a collection', function (): void {
     $dto = builder()->meta(['ip' => '127.0.0.1'])->toDto();

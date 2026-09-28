@@ -37,7 +37,7 @@ it('holds at new until every required approver has approved', function () {
     $anotherUser = User::create();
 
     $request = (new CreateRequest)->execute(new CreateRequestDto(
-        requireApprovalsFrom: collect([$user->id, $anotherUser->id]),
+        approvers: [$user, $anotherUser],
     ));
 
     Event::fake(RequestStatusChanged::class);
@@ -60,7 +60,7 @@ it('approves once every required approver has approved', function () {
     $anotherUser = User::create();
 
     $request = (new CreateRequest)->execute(new CreateRequestDto(
-        requireApprovalsFrom: collect([$user->id, $anotherUser->id]),
+        approvers: [$user, $anotherUser],
     ));
 
     Event::fake(RequestStatusChanged::class);
@@ -85,7 +85,7 @@ it('rejects a unanimous request on the first rejection', function () {
     $anotherUser = User::create();
 
     $request = (new CreateRequest)->execute(new CreateRequestDto(
-        requireApprovalsFrom: collect([$user->id, $anotherUser->id]),
+        approvers: [$user, $anotherUser],
     ));
 
     (new ResolveRequest)->execute($request, $user, Status::Rejected, reason: 'Out of policy');

@@ -41,7 +41,7 @@ it('creates request with all details', function () {
         meta: collect([
             'ip' => '127.0.0.1',
         ]),
-        requireApprovalsFrom: collect([1]),
+        approvers: [$author],
     ));
 
     Event::assertDispatched(fn (RequestCreated $e) => $e->request->is($request));
@@ -55,7 +55,7 @@ it('creates request with all details', function () {
         'title' => 'Its mine!',
         'description' => 'This is mine and only mine.',
         'meta' => '{"ip":"127.0.0.1"}',
-        'require_approvals_from' => '[1]',
+        'require_approvals_from' => json_encode([$author->id]),
     ]);
 });
 

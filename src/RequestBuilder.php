@@ -11,6 +11,7 @@ use RoundlyConsulting\Approvals\DataTransferObjects\StageDefinition;
 use RoundlyConsulting\Approvals\Enums\ApprovalRule;
 use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
 use RoundlyConsulting\Requests\Enums\Status;
+use RoundlyConsulting\Requests\Exceptions\InvalidApprover;
 use RoundlyConsulting\Requests\Models\Request;
 
 /**
@@ -31,9 +32,6 @@ final class RequestBuilder
 
     /** @var Collection<array-key, mixed>|null */
     private ?Collection $meta = null;
-
-    /** @var Collection<array-key, int|string>|null */
-    private ?Collection $requireApprovalsFrom = null;
 
     /** @var list<Model> */
     private array $approvers = [];
@@ -100,33 +98,25 @@ final class RequestBuilder
     }
 
     /**
-     * Accepts approver models or ids. Ids are stored on the request as the declared
-     * approver set; model instances are also retained so a workflow preset can be
-     * opened against them.
+     * The declared approvers: only they (or their delegates) may decide the request.
+     * They must be saved models — a bare id names no model type, so it could never be
+     * enforced and is refused with an InvalidApprover exception.
      *
-     * @param  Model|iterable<array-key, Model|int|string>  $approvers
+     * @param  Model|iterable<array-key, Model>  $approvers
+     *
+     * @throws InvalidApprover
      */
     public function requireApprovalsFrom(Model|iterable $approvers): self
     {
         $approvers = $approvers instanceof Model ? [$approvers] : $approvers;
 
-        $collection = Collection::make($approvers);
-
         $models = [];
 
-        foreach ($collection as $approver) {
-            if ($approver instanceof Model) {
-                $models[] = $approver;
-            }
+        foreach ($approvers as $approver) {
+            $models[] = self::approver($approver);
         }
 
         $this->approvers = $models;
-
-        $this->requireApprovalsFrom = $collection
-            ->map(fn (Model|int|string $approver): int|string => $approver instanceof Model
-                ? $approver->getKey()
-                : $approver)
-            ->values();
 
         return $this;
     }
@@ -214,11 +204,10 @@ final class RequestBuilder
             title: $this->title,
             description: $this->description,
             meta: $this->meta,
-            requireApprovalsFrom: $this->requireApprovalsFrom,
+            approvers: $this->approvers,
             expiresAt: $this->expiresAt,
             rule: $this->rule,
             quorum: $this->quorum,
-            approvers: $this->approvers,
             stages: $this->stages,
             workflow: $this->workflow,
             stageApprovers: $this->stageApprovers,
@@ -229,5 +218,17 @@ final class RequestBuilder
     public function create(): Request
     {
         return $this->manager->create($this->toDto());
+    }
+
+    /**
+     * @throws InvalidApprover
+     */
+    private static function approver(mixed $approver): Model
+    {
+        if (! $approver instanceof Model) {
+            throw InvalidApprover::notAModel($approver);
+        }
+
+        return $approver;
     }
 }

@@ -58,7 +58,7 @@ it('honours the host model when an approval resolves the request', function (): 
     $request = Requests::make()
         ->title('Budget')
         ->author($author)
-        ->requireApprovalsFrom(collect([$approver->getKey()]))
+        ->requireApprovalsFrom([$approver])
         ->create();
 
     Requests::approve($request, $approver);

@@ -15,8 +15,7 @@ final readonly class CreateRequestDto
 {
     /**
      * @param  Collection<array-key, mixed>|null  $meta
-     * @param  Collection<array-key, int|string>|null  $requireApprovalsFrom  declared approver ids stored on the request
-     * @param  list<Model>  $approvers  approver models retained for opening a workflow-preset request
+     * @param  list<Model>  $approvers  the declared approvers of a flat request (or flat workflow preset): only they, or their delegates, may decide it; their keys are stored on the request
      * @param  list<StageDefinition>  $stages  an ad-hoc, sequential approval pipeline
      * @param  list<list<Model>>  $stageApprovers  approver groups, one per stage, for a staged workflow preset
      */
@@ -27,11 +26,10 @@ final readonly class CreateRequestDto
         public ?string $title = null,
         public ?string $description = null,
         public ?Collection $meta = null,
-        public ?Collection $requireApprovalsFrom = null,
+        public array $approvers = [],
         public ?CarbonInterface $expiresAt = null,
         public ApprovalRule $rule = ApprovalRule::Unanimous,
         public ?int $quorum = null,
-        public array $approvers = [],
         public array $stages = [],
         public ?string $workflow = null,
         public array $stageApprovers = [],

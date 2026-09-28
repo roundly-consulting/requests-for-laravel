@@ -5,10 +5,9 @@ declare(strict_types=1);
 namespace RoundlyConsulting\Requests\Actions;
 
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use RoundlyConsulting\Approvals\Enums\ApprovalStatus;
 use RoundlyConsulting\Approvals\Facades\Approvals;
-use RoundlyConsulting\Approvals\Support\ApprovalRequestModelResolver;
 use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
 use RoundlyConsulting\Requests\Events\RequestCreated;
 use RoundlyConsulting\Requests\Models\Request;
@@ -24,7 +23,7 @@ final class CreateRequest
             'title' => $dto->title,
             'description' => $dto->description,
             'meta' => $dto->meta,
-            'require_approvals_from' => $dto->requireApprovalsFrom,
+            'require_approvals_from' => $this->approverKeys($dto->approvers),
             'expires_at' => $dto->expiresAt ?? $this->defaultExpiry(),
         ]);
 
@@ -32,9 +31,13 @@ final class CreateRequest
             $request->author()->associate($dto->author);
         }
 
-        $request->save();
+        // One unit: a request whose approval round failed to open (an unsaved approver,
+        // an unknown preset) must not survive as a request anyone could resolve alone.
+        $request->getConnection()->transaction(function () use ($request, $dto): void {
+            $request->save();
 
-        $this->openApprovalRequest($request, $dto);
+            $this->openApprovalRequest($request, $dto);
+        });
 
         event(new RequestCreated($request));
 
@@ -42,9 +45,11 @@ final class CreateRequest
     }
 
     /**
-     * Open an approvals-engine request for the new request, when one is called for.
-     * A named workflow preset wins, then an explicit staged pipeline, then the flat
-     * declared approver set. A request without approvers opens nothing.
+     * Open an approvals-engine round for the new request, when one is called for, through
+     * the approvals builder — so the approvers it names are stored and only they (or their
+     * delegates) may decide. A named workflow preset wins, then an explicit staged
+     * pipeline, then the flat declared approver set. A request without approvers opens
+     * nothing and resolves on the first decision.
      */
     private function openApprovalRequest(Request $request, CreateRequestDto $dto): void
     {
@@ -57,32 +62,51 @@ final class CreateRequest
         }
 
         if ($dto->stages !== []) {
-            $request->requestStagedApproval($dto->stages, $dto->rejectOnStageRejection);
+            // Flat approvers passed alongside stages are handed on too, so the engine
+            // refuses the mix instead of silently dropping them.
+            Approvals::request($request)
+                ->from($dto->approvers)
+                ->stages($dto->stages)
+                ->continueOnRejection(! $dto->rejectOnStageRejection)
+                ->open();
 
             return;
         }
 
-        $ids = $request->require_approvals_from;
-
-        if ($ids === null || $ids->isEmpty()) {
+        if ($dto->approvers === []) {
             return;
         }
 
-        $this->openFlatApprovalRequest($request, $dto, $ids->unique()->count());
+        Approvals::request($request)
+            ->from($dto->approvers)
+            ->rule($dto->rule, $dto->quorum)
+            ->open();
     }
 
-    private function openFlatApprovalRequest(Request $request, CreateRequestDto $dto, int $required): void
+    /**
+     * The declared approvers' keys, each approver once, stored on the request.
+     *
+     * @param  list<Model>  $approvers
+     * @return list<mixed>|null
+     */
+    private function approverKeys(array $approvers): ?array
     {
-        $model = ApprovalRequestModelResolver::class();
+        $unique = [];
 
-        $approvalRequest = new $model;
-        $approvalRequest->subject_id = $request->getKey();
-        $approvalRequest->subject_type = $request->getMorphClass();
-        $approvalRequest->rule = $dto->rule;
-        $approvalRequest->quorum = $dto->quorum;
-        $approvalRequest->required_approvers = $required;
-        $approvalRequest->status = ApprovalStatus::Pending;
-        $approvalRequest->save();
+        foreach ($approvers as $approver) {
+            foreach ($unique as $seen) {
+                if ($seen->getMorphClass() === $approver->getMorphClass()
+                    && (string) $seen->getKey() === (string) $approver->getKey()) {
+                    continue 2;
+                }
+            }
+
+            $unique[] = $approver;
+        }
+
+        return $unique === []
+            ? null
+            : array_map(static fn (Model $approver): mixed => $approver->getKey(), $unique);
     }
 
     private function defaultExpiry(): ?CarbonInterface

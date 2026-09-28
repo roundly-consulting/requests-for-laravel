@@ -48,9 +48,10 @@ it('reports an approval progress snapshot', function (): void {
 it('dedupes the required approver count', function (): void {
     $a = User::create();
 
-    $request = Requests::make()->requireApprovalsFrom([$a->id, $a->id])->create();
+    $request = Requests::make()->requireApprovalsFrom([$a, $a])->create();
 
-    expect($request->approvalProgress()?->required)->toBe(1);
+    expect($request->approvalProgress()?->required)->toBe(1)
+        ->and($request->require_approvals_from?->all())->toBe([$a->id]);
 });
 
 it('proxies the subject relation back to the request', function (): void {

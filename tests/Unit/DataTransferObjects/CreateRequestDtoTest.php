@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
 use RoundlyConsulting\Requests\Enums\Status;
+use RoundlyConsulting\Requests\Tests\User;
 
 it('defaults to a new request without an author', function (): void {
     $dto = new CreateRequestDto;
@@ -12,7 +13,7 @@ it('defaults to a new request without an author', function (): void {
         ->and($dto->author)->toBeNull()
         ->and($dto->type)->toBeNull()
         ->and($dto->meta)->toBeNull()
-        ->and($dto->requireApprovalsFrom)->toBeNull();
+        ->and($dto->approvers)->toBe([]);
 });
 
 it('carries all provided values', function (): void {
@@ -22,7 +23,7 @@ it('carries all provided values', function (): void {
         title: 'Title',
         description: 'Description',
         meta: collect(['ip' => '127.0.0.1']),
-        requireApprovalsFrom: collect([1, 2]),
+        approvers: [$alice = User::create()],
     );
 
     expect($dto->status)->toBe(Status::Approved)
@@ -30,7 +31,7 @@ it('carries all provided values', function (): void {
         ->and($dto->title)->toBe('Title')
         ->and($dto->description)->toBe('Description')
         ->and($dto->meta?->all())->toBe(['ip' => '127.0.0.1'])
-        ->and($dto->requireApprovalsFrom?->all())->toBe([1, 2]);
+        ->and($dto->approvers)->toBe([$alice]);
 });
 
 it('carries an expiry deadline', function (): void {
