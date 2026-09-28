@@ -10,6 +10,8 @@ use RoundlyConsulting\Approvals\Events\ApprovalRequestResolved;
 use RoundlyConsulting\Approvals\Models\ApprovalRequest;
 use RoundlyConsulting\PackageToolkit\Support\Config;
 use RoundlyConsulting\Requests\Enums\Status;
+use RoundlyConsulting\Requests\Events\RequestCancelled;
+use RoundlyConsulting\Requests\Events\RequestExpired;
 use RoundlyConsulting\Requests\Events\RequestRejected;
 use RoundlyConsulting\Requests\Events\RequestStatusChanged;
 use RoundlyConsulting\Requests\Models\Request;
@@ -54,12 +56,20 @@ final class SyncRequestStatusFromApproval
 
         event(new RequestStatusChanged($subject));
 
-        if ($target === Status::Rejected) {
-            $actor = $this->rejectingActor($approvalRequest);
+        match ($target) {
+            Status::Rejected => $this->announceRejection($subject, $approvalRequest),
+            Status::Expired => event(new RequestExpired($subject)),
+            Status::Cancelled => event(new RequestCancelled($subject)),
+            default => null,
+        };
+    }
 
-            if ($actor !== null) {
-                event(new RequestRejected($subject, $actor));
-            }
+    private function announceRejection(Request $subject, ApprovalRequest $approvalRequest): void
+    {
+        $actor = $this->rejectingActor($approvalRequest);
+
+        if ($actor !== null) {
+            event(new RequestRejected($subject, $actor));
         }
     }
 

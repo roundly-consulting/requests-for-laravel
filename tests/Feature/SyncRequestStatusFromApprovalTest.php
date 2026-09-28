@@ -2,12 +2,15 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\Approvals\Enums\ApprovalRule;
 use RoundlyConsulting\Approvals\Enums\ApprovalStatus;
 use RoundlyConsulting\Approvals\Events\ApprovalRequestResolved;
 use RoundlyConsulting\Approvals\Facades\Approvals;
 use RoundlyConsulting\Approvals\Models\ApprovalRequest;
 use RoundlyConsulting\Requests\Enums\Status;
+use RoundlyConsulting\Requests\Events\RequestCancelled;
+use RoundlyConsulting\Requests\Events\RequestExpired;
 use RoundlyConsulting\Requests\Facades\Requests;
 use RoundlyConsulting\Requests\Models\Request;
 use RoundlyConsulting\Requests\Tests\User;
@@ -87,4 +90,31 @@ it('respects enforced transitions when syncing', function (): void {
 
     // Cancelled is terminal: the illegal sync is skipped.
     expect($request->fresh()?->status)->toBe(Status::Cancelled);
+});
+
+it('announces an engine-driven expiry or cancellation with the requests events', function (): void {
+    Event::fake([RequestExpired::class, RequestCancelled::class]);
+
+    $expiring = Request::factory()->pending()->create();
+    $cancelling = Request::factory()->pending()->create();
+
+    event(new ApprovalRequestResolved(approvalRequestFor($expiring, ApprovalStatus::Expired)));
+    event(new ApprovalRequestResolved(approvalRequestFor($cancelling, ApprovalStatus::Cancelled)));
+
+    Event::assertDispatched(fn (RequestExpired $e): bool => $e->request->is($expiring));
+    Event::assertDispatched(fn (RequestCancelled $e): bool => $e->request->is($cancelling));
+});
+
+it('expires the request when its approval round lapses in the engine', function (): void {
+    $alice = User::create();
+
+    $request = Requests::make()->requireApprovalsFrom([$alice])->create();
+    $request->approvalRequests()->firstOrFail()->forceFill(['expires_at' => now()->subMinute()])->save();
+
+    Event::fake([RequestExpired::class]);
+
+    Approvals::expire();
+
+    expect($request->fresh()?->status)->toBe(Status::Expired);
+    Event::assertDispatched(fn (RequestExpired $e): bool => $e->request->is($request));
 });
