@@ -9,6 +9,7 @@ use RoundlyConsulting\Approvals\Builders\PendingApproval;
 use RoundlyConsulting\Approvals\Enums\ApprovalStatus;
 use RoundlyConsulting\Approvals\Facades\Approvals;
 use RoundlyConsulting\Approvals\Interfaces\GivesApprovalsInterface;
+use RoundlyConsulting\PackageToolkit\Support\Config;
 use RoundlyConsulting\Requests\Enums\Status;
 use RoundlyConsulting\Requests\Events\ApprovalRecorded;
 use RoundlyConsulting\Requests\Events\ApprovalRevoked;
@@ -147,7 +148,7 @@ final class ResolveRequest
 
     private function enforcing(): bool
     {
-        return (bool) config('requests.enforce_transitions', false);
+        return Config::boolean('requests.enforce_transitions');
     }
 
     private function updateRequestStatus(Request $request, Status $status): Request

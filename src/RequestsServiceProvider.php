@@ -10,9 +10,11 @@ use RoundlyConsulting\Approvals\Events\ApprovalRequestResolved;
 use RoundlyConsulting\PackageToolkit\Concerns\RegistersBlueprintMacros;
 use RoundlyConsulting\PackageToolkit\Package;
 use RoundlyConsulting\PackageToolkit\PackageServiceProvider;
+use RoundlyConsulting\PackageToolkit\Support\Config;
 use RoundlyConsulting\Requests\Commands\ExpireRequestsCommand;
 use RoundlyConsulting\Requests\Facades\Requests;
 use RoundlyConsulting\Requests\Listeners\SyncRequestStatusFromApproval;
+use RoundlyConsulting\Requests\Support\DefaultTtl;
 use RoundlyConsulting\Requests\Support\RequestModel;
 
 final class RequestsServiceProvider extends PackageServiceProvider
@@ -31,7 +33,7 @@ final class RequestsServiceProvider extends PackageServiceProvider
             ])
             ->contributesToAbout(static fn (): array => [
                 'Model' => class_basename(RequestModel::class()),
-                'Transition guard' => config('requests.enforce_transitions', false) === true ? 'ENFORCED' : 'OFF',
+                'Transition guard' => Config::boolean('requests.enforce_transitions') ? 'ENFORCED' : 'OFF',
                 'Default TTL' => self::defaultTtl(),
                 'Facade alias' => self::facadeAlias(),
             ]);
@@ -64,7 +66,7 @@ final class RequestsServiceProvider extends PackageServiceProvider
      */
     private function registerFacadeAlias(): void
     {
-        if (! config('requests.register_facade_alias', true)) {
+        if (! Config::boolean('requests.register_facade_alias', true)) {
             return;
         }
 
@@ -80,13 +82,13 @@ final class RequestsServiceProvider extends PackageServiceProvider
 
     private static function defaultTtl(): string
     {
-        $ttl = config('requests.default_ttl');
+        $ttl = DefaultTtl::minutes();
 
-        return is_int($ttl) ? $ttl.' min' : 'NONE';
+        return $ttl === null ? 'NONE' : $ttl.' min';
     }
 
     private static function facadeAlias(): string
     {
-        return config('requests.register_facade_alias', true) === false ? 'DISABLED' : 'Requests';
+        return Config::boolean('requests.register_facade_alias', true) ? 'Requests' : 'DISABLED';
     }
 }

@@ -11,6 +11,7 @@ use RoundlyConsulting\Approvals\Facades\Approvals;
 use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
 use RoundlyConsulting\Requests\Events\RequestCreated;
 use RoundlyConsulting\Requests\Models\Request;
+use RoundlyConsulting\Requests\Support\DefaultTtl;
 use RoundlyConsulting\Requests\Support\RequestModel;
 
 final class CreateRequest
@@ -111,13 +112,9 @@ final class CreateRequest
 
     private function defaultExpiry(): ?CarbonInterface
     {
-        $ttl = config('requests.default_ttl');
+        $ttl = DefaultTtl::minutes();
 
-        if (! is_int($ttl)) {
-            return null;
-        }
-
-        return Carbon::now()->addMinutes($ttl);
+        return $ttl === null ? null : Carbon::now()->addMinutes($ttl);
     }
 
     /**

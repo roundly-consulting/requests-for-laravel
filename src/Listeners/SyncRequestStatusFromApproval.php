@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use RoundlyConsulting\Approvals\Enums\ApprovalStatus;
 use RoundlyConsulting\Approvals\Events\ApprovalRequestResolved;
 use RoundlyConsulting\Approvals\Models\ApprovalRequest;
+use RoundlyConsulting\PackageToolkit\Support\Config;
 use RoundlyConsulting\Requests\Enums\Status;
 use RoundlyConsulting\Requests\Events\RequestRejected;
 use RoundlyConsulting\Requests\Events\RequestStatusChanged;
@@ -87,6 +88,6 @@ final class SyncRequestStatusFromApproval
 
     private function enforcing(): bool
     {
-        return (bool) config('requests.enforce_transitions', false);
+        return Config::boolean('requests.enforce_transitions');
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RoundlyConsulting\Requests\Actions;
 
 use RoundlyConsulting\Approvals\Enums\ApprovalStatus;
+use RoundlyConsulting\PackageToolkit\Support\Config;
 use RoundlyConsulting\Requests\Enums\Status;
 use RoundlyConsulting\Requests\Events\RequestCancelled;
 use RoundlyConsulting\Requests\Events\RequestStatusChanged;
@@ -49,6 +50,6 @@ final class CancelRequest
 
     private function enforcing(): bool
     {
-        return (bool) config('requests.enforce_transitions', false);
+        return Config::boolean('requests.enforce_transitions');
     }
 }
