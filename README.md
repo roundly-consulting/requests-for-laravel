@@ -135,7 +135,7 @@ $user->approvedRequests()->get();
 $user->rejectedRequests()->get();
 ```
 
-### Create a request — the facade (recommended)
+### Create a request — the facade
 
 The `Requests` facade is the discoverable entry point. The fully-qualified facade
 `RoundlyConsulting\Requests\Facades\Requests` always works; a short `Requests` alias is also
@@ -155,14 +155,29 @@ $request = Requests::make()
     ->create();
 ```
 
-### Create a request — the action / DTO (still supported)
+### Without the facade
+
+The facade is sugar over `RoundlyConsulting\Requests\RequestManager`. Inject the manager for
+the same API with dependency injection, or run an action directly:
 
 ```php
 use RoundlyConsulting\Requests\Actions\CreateRequest;
 use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
 use RoundlyConsulting\Requests\Enums\Status;
+use RoundlyConsulting\Requests\RequestManager;
 
-$request = (new CreateRequest())->execute(new CreateRequestDto(
+final class SubmitClaim
+{
+    public function __construct(private RequestManager $requests) {}
+
+    public function __invoke(User $user): Request
+    {
+        return $this->requests->make()->author($user)->title('Expense reimbursement')->create();
+    }
+}
+
+// The raw action:
+$request = app(CreateRequest::class)->execute(new CreateRequestDto(
     status: Status::New,
     author: $user,
     title: 'Expense reimbursement',
@@ -173,6 +188,15 @@ $request = (new CreateRequest())->execute(new CreateRequestDto(
 ```
 
 `CreateRequest` dispatches a `RequestCreated` event.
+
+| Facade / manager method | Action |
+|---|---|
+| `make()` → `RequestBuilder` (`->create()`), `create(CreateRequestDto)` | `CreateRequest` |
+| `approve()`, `reject()`, `reopen()` (`$request`, `$actor`, `?$reason`) | `ResolveRequest` |
+| `cancel($request)` | `CancelRequest` |
+| `expire($request)` | `ExpireRequest` |
+| `expireDue(bool $dryRun = false, int $chunk = 500): int` | `ExpireDueRequests` |
+| `canTransition($request, Status $to): bool` | — (reads the lifecycle graph) |
 
 ### Resolve a request
 
@@ -192,7 +216,7 @@ so you get a full audit trail for free. The underlying `ResolveRequest` action a
 ```php
 use RoundlyConsulting\Requests\Actions\ResolveRequest;
 
-(new ResolveRequest())->execute($request, $alice, Status::Approved, reason: 'Signed off');
+app(ResolveRequest::class)->execute($request, $alice, Status::Approved, reason: 'Signed off');
 ```
 
 - A request with **no** declared approvers resolves immediately.
@@ -277,8 +301,8 @@ An approver on leave can hand their authority to a stand-in via the approvals en
 ```php
 use RoundlyConsulting\Approvals\Facades\Approvals;
 
-$alice->delegateApprovalsTo($bob)->until(now()->addWeek());
-// or: Approvals::delegate($alice, $bob);
+Approvals::delegations($alice)->to($bob)->until(now()->addWeek())->grant();
+// or: $alice->delegateApprovalsTo($bob, until: now()->addWeek());
 ```
 
 While the delegation is active, `Requests::approve($request, $bob)` counts as Alice's decision.
@@ -305,10 +329,24 @@ Cancelled  -> (terminal)
 
 With the flag off (the default) the guard is skipped and decisions resolve directly.
 
-### Auto-expiry & the prune command
+Ask the graph before you act — it answers the same way whether or not enforcement is on:
+
+```php
+Requests::canTransition($request, Status::Approved); // bool
+```
+
+### Auto-expiry & the expire command
 
 Stamp an expiry on creation (per request via `expiresAt`, or globally via `default_ttl`).
-Expire stale open requests with the scheduled command:
+Expire stale open requests from code:
+
+```php
+Requests::expireDue();                // int — how many requests were expired
+Requests::expireDue(dryRun: true);    // int — how many are due; nothing changes
+Requests::expireDue(chunk: 1000);     // rows processed per batch
+```
+
+…or with the scheduled command, a thin wrapper over `Requests::expireDue()`:
 
 ```bash
 php artisan requests:expire            # expire all open, past-due requests
@@ -318,7 +356,8 @@ php artisan requests:expire --chunk=1000
 
 Only **open** (New) requests past their `expires_at` are expired; approved/rejected requests
 are untouched. The command also lapses any pending approval **decisions** whose own expiry has
-passed (via `Approvals::expire()`).
+passed (via `Approvals::expire()`); `Requests::expireDue()` expires requests only, so call
+`Approvals::expire()` yourself when you sweep from code.
 
 ### Query scopes
 
@@ -382,8 +421,10 @@ Messages are translatable via the `requests::messages` namespace.
 
 ### Testing helpers
 
-Swap the manager for a recording fake in tests — no database writes, no hand-rolled
-`Event::fake()`:
+`Requests::fake()` swaps a recording fake in behind the facade **and** the container, so the
+facade, the fluent builder and any constructor-injected `RequestManager` all land on it.
+Mutating calls are recorded and never touch the database; `canTransition()` still answers
+for real:
 
 ```php
 use RoundlyConsulting\Requests\Facades\Requests;
@@ -391,15 +432,24 @@ use RoundlyConsulting\Requests\Facades\Requests;
 $fake = Requests::fake();
 
 Requests::make()->title('Expense')->create();
-Requests::approve($request, $alice);
+Requests::approve($request, $alice, 'Within budget');
 
-$fake->assertCreated();
-$fake->assertApproved($request, $alice);
-$fake->assertNothingCreated();
+$fake->assertCreated(1);
+$fake->assertApproved($request, $alice, 'Within budget');
+$fake->assertNothingRejected();
 ```
 
-Available assertions: `assertCreated()`, `assertNothingCreated()`, `assertApproved()`,
-`assertRejected()`, `assertReopened()`, `assertCancelled()`, `assertExpired()`.
+| Assertion | Passes when |
+|---|---|
+| `assertCreated(?int $times = null)` / `assertNothingCreated()` | a request was (exactly `$times` requests were) / none was created |
+| `assertApproved($request, ?$actor = null, ?$reason = null)` / `assertNothingApproved()` | the request was approved (by `$actor`, with `$reason`, when given) / nothing was |
+| `assertRejected(...)` / `assertNothingRejected()` | same, for rejections |
+| `assertReopened(...)` / `assertNothingReopened()` | same, for reopens |
+| `assertCancelled($request)` / `assertNothingCancelled()` | the request was / none was cancelled |
+| `assertExpired($request)` / `assertNothingExpired()` | the request was / none was expired |
+| `assertExpiredDue(?bool $dryRun = null)` / `assertNothingExpiredDue()` | `expireDue()` ran (with that dry-run flag, when given) / never ran |
+
+Under the fake, `expireDue()` returns how many requests are due without expiring any.
 
 ## Integrates with
 
