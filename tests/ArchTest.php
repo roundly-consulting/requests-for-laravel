@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use RoundlyConsulting\Requests\Exceptions\RequestException;
 use RoundlyConsulting\Requests\Models\Request;
+use RoundlyConsulting\Requests\RequestManager;
 use RoundlyConsulting\Testing\Arch\ArchPresets;
 
 /**
@@ -14,8 +15,10 @@ ArchPresets::strictTypes('RoundlyConsulting\Requests');
 
 /**
  * The deliberate extension points are exempt: `Request` is what `requests.model` invites a
- * host to subclass (pinned by the preset below instead), and RequestException is the base
- * every requests error extends so a host can catch them uniformly.
+ * host to subclass (pinned by the preset below instead), RequestException is the base
+ * every requests error extends so a host can catch them uniformly, and RequestManager is
+ * the facade root `RequestsFake` extends, so a constructor-injected manager receives the
+ * fake under `Requests::fake()`.
  *
  * Note the `$ignoring` PARAMETER rather than Pest's fluent `->ignoring()`. Only the
  * parameter is rot-checked (by `exemptionsExist` below): the fluent form accepts any string
@@ -25,6 +28,7 @@ ArchPresets::strictTypes('RoundlyConsulting\Requests');
 ArchPresets::finalByDefault('RoundlyConsulting\Requests', [
     Request::class,
     RequestException::class,
+    RequestManager::class,
 ]);
 
 /**
@@ -77,6 +81,12 @@ ArchPresets::runtimeRequireIsWhitelisted(__DIR__.'/../composer.json');
  * three functions; the preset covers the full leftover set.
  */
 ArchPresets::noDebuggingLeftovers();
+
+/**
+ * Models and model traits delegate to the manager, never to an action, so the facade's
+ * fake sees every call.
+ */
+ArchPresets::modelsGoThroughTheFacade('RoundlyConsulting\Requests');
 
 /*
 |--------------------------------------------------------------------------

@@ -9,13 +9,12 @@ use Illuminate\Support\Carbon;
 use RoundlyConsulting\Approvals\Enums\ApprovalStatus;
 use RoundlyConsulting\Approvals\Facades\Approvals;
 use RoundlyConsulting\Approvals\Support\ApprovalRequestModelResolver;
-use RoundlyConsulting\Requests\Contracts\CreatesRequests;
 use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
 use RoundlyConsulting\Requests\Events\RequestCreated;
 use RoundlyConsulting\Requests\Models\Request;
 use RoundlyConsulting\Requests\Support\RequestModel;
 
-final class CreateRequest implements CreatesRequests
+final class CreateRequest
 {
     public function execute(CreateRequestDto $dto): Request
     {

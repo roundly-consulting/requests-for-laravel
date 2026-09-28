@@ -9,6 +9,11 @@ use RoundlyConsulting\Requests\RequestBuilder;
 use RoundlyConsulting\Requests\RequestManager;
 use RoundlyConsulting\Requests\Tests\User;
 
+/*
+ * The dependency-injection form: the same API, resolved from the container
+ * instead of reached through the facade.
+ */
+
 function manager(): RequestManager
 {
     return app(RequestManager::class);
@@ -54,4 +59,13 @@ it('cancels and expires', function (): void {
     $expiring = Request::factory()->expired()->create();
     manager()->expire($expiring);
     expect($expiring->fresh()?->status)->toBe(Status::Expired);
+});
+
+it('expires the due requests and answers transition questions', function (): void {
+    $due = Request::factory()->expired()->create();
+
+    expect(manager()->expireDue())->toBe(1)
+        ->and($due->fresh()?->status)->toBe(Status::Expired)
+        ->and(manager()->canTransition($due->refresh(), Status::New))->toBeTrue()
+        ->and(manager()->canTransition($due, Status::Approved))->toBeFalse();
 });

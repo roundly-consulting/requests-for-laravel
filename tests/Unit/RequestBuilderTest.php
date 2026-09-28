@@ -3,14 +3,14 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Collection;
-use RoundlyConsulting\Requests\Actions\CreateRequest;
 use RoundlyConsulting\Requests\Enums\Status;
 use RoundlyConsulting\Requests\RequestBuilder;
+use RoundlyConsulting\Requests\RequestManager;
 use RoundlyConsulting\Requests\Tests\User;
 
 function builder(): RequestBuilder
 {
-    return new RequestBuilder(new CreateRequest);
+    return new RequestBuilder(app(RequestManager::class));
 }
 
 it('defaults to a new request', function (): void {

@@ -8,6 +8,13 @@ use RoundlyConsulting\Requests\Models\Request;
 use RoundlyConsulting\Requests\RequestManager;
 use RoundlyConsulting\Requests\Tests\User;
 
+it('documents its root, is fakeable and reaches every action', function (): void {
+    expect(Requests::class)
+        ->toDocumentItsRoot()
+        ->toBeFakeable()
+        ->toReachEveryAction(__DIR__.'/../../src/Actions');
+});
+
 it('creates a request fluently through the facade', function (): void {
     $alice = User::create();
     $bob = User::create();
@@ -47,6 +54,38 @@ it('cancels and expires through the facade', function (): void {
     $expiring = Request::factory()->expired()->create();
     Requests::expire($expiring);
     expect($expiring->fresh()?->status)->toBe(Status::Expired);
+});
+
+it('expires the due requests through the facade', function (): void {
+    $due = Request::factory()->expired()->create();
+    $future = Request::factory()->pending()->create(['expires_at' => now()->addDay()]);
+
+    expect(Requests::expireDue(dryRun: true))->toBe(1)
+        ->and($due->fresh()?->status)->toBe(Status::New)
+        ->and(Requests::expireDue())->toBe(1)
+        ->and($due->fresh()?->status)->toBe(Status::Expired)
+        ->and($future->fresh()?->status)->toBe(Status::New)
+        ->and(Requests::expireDue())->toBe(0);
+});
+
+it('answers whether a request may move to a status through the facade', function (): void {
+    $open = Request::factory()->pending()->create();
+    $cancelled = Request::factory()->create(['status' => Status::Cancelled]);
+
+    expect(Requests::canTransition($open, Status::Approved))->toBeTrue()
+        ->and(Requests::canTransition($open, Status::New))->toBeTrue()
+        ->and(Requests::canTransition($cancelled, Status::New))->toBeFalse()
+        ->and(Requests::canTransition($cancelled, Status::Cancelled))->toBeTrue();
+});
+
+it('passes the reason through to the approvals engine', function (): void {
+    $alice = User::create();
+
+    $request = Requests::make()->requireApprovalsFrom([$alice])->create();
+
+    Requests::approve($request, $alice, 'Within budget');
+
+    expect($alice->approvalFor($request)?->reason)->toBe('Within budget');
 });
 
 it('resolves the manager as a singleton from the container', function (): void {

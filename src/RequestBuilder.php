@@ -9,13 +9,13 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use RoundlyConsulting\Approvals\DataTransferObjects\StageDefinition;
 use RoundlyConsulting\Approvals\Enums\ApprovalRule;
-use RoundlyConsulting\Requests\Contracts\CreatesRequests;
 use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
 use RoundlyConsulting\Requests\Enums\Status;
 use RoundlyConsulting\Requests\Models\Request;
 
 /**
- * Fluent builder that assembles a CreateRequestDto and delegates to CreateRequest.
+ * Fluent builder that assembles a CreateRequestDto and creates it through the
+ * manager, so host overrides and `Requests::fake()` see every builder call.
  */
 final class RequestBuilder
 {
@@ -54,7 +54,7 @@ final class RequestBuilder
 
     private bool $rejectOnStageRejection = true;
 
-    public function __construct(private readonly CreatesRequests $create) {}
+    public function __construct(private readonly RequestManager $manager) {}
 
     public function status(Status $status): self
     {
@@ -228,6 +228,6 @@ final class RequestBuilder
 
     public function create(): Request
     {
-        return $this->create->execute($this->toDto());
+        return $this->manager->create($this->toDto());
     }
 }

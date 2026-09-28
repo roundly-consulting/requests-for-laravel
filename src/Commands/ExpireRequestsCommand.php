@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace RoundlyConsulting\Requests\Commands;
 
 use Illuminate\Console\Command;
-use RoundlyConsulting\Approvals\Facades\Approvals;
-use RoundlyConsulting\Requests\Actions\ExpireRequest;
-use RoundlyConsulting\Requests\Support\RequestModel;
+use RoundlyConsulting\Approvals\ApprovalsManager;
+use RoundlyConsulting\Requests\RequestManager;
 
 final class ExpireRequestsCommand extends Command
 {
@@ -15,24 +14,11 @@ final class ExpireRequestsCommand extends Command
 
     protected $description = 'Expire open requests whose expiry deadline has passed';
 
-    public function handle(ExpireRequest $expire): int
+    public function handle(RequestManager $requests, ApprovalsManager $approvals): int
     {
         $dryRun = (bool) $this->option('dry-run');
-        $chunk = max(1, (int) $this->option('chunk'));
 
-        $count = 0;
-
-        RequestModel::class()::query()
-            ->expired()
-            ->chunkById($chunk, function ($requests) use ($expire, $dryRun, &$count): void {
-                foreach ($requests as $request) {
-                    if (! $dryRun) {
-                        $expire->execute($request);
-                    }
-
-                    $count++;
-                }
-            });
+        $count = $requests->expireDue($dryRun, (int) $this->option('chunk'));
 
         $this->info($dryRun
             ? "Would expire {$count} request(s)."
@@ -40,7 +26,7 @@ final class ExpireRequestsCommand extends Command
 
         if (! $dryRun) {
             // Lapse any pending approval decisions whose own expiry has passed.
-            $lapsed = Approvals::expire();
+            $lapsed = $approvals->expire();
 
             if ($lapsed > 0) {
                 $this->info("Lapsed {$lapsed} expired approval decision(s).");
