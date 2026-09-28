@@ -9,10 +9,12 @@ use RoundlyConsulting\Requests\Enums\Status;
 use RoundlyConsulting\Requests\Events\RequestExpired;
 use RoundlyConsulting\Requests\Events\RequestStatusChanged;
 use RoundlyConsulting\Requests\Models\Request;
+use RoundlyConsulting\Requests\Support\StatusGuard;
 
 final class ExpireRequest
 {
     public function __construct(
+        private readonly StatusGuard $guard = new StatusGuard,
         private readonly CloseApprovalRound $closeRound = new CloseApprovalRound,
     ) {}
 
@@ -22,6 +24,10 @@ final class ExpireRequest
      */
     public function execute(Request $request): Request
     {
+        if ($this->enforcing()) {
+            $this->guard->assert($request->status, Status::Expired);
+        }
+
         $request->getConnection()->transaction(function () use ($request): void {
             $request->update(['status' => Status::Expired]);
 
@@ -32,5 +38,10 @@ final class ExpireRequest
         event(new RequestExpired($request));
 
         return $request;
+    }
+
+    private function enforcing(): bool
+    {
+        return (bool) config('requests.enforce_transitions', false);
     }
 }
