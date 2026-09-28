@@ -39,6 +39,12 @@ final class SyncRequestStatusFromApproval
             return;
         }
 
+        // A cancelled or expired request stays closed, even when a round it no longer
+        // follows resolves late (the transition guard is off by default).
+        if ($this->guard->closes($subject->status, $target)) {
+            return;
+        }
+
         if ($this->enforcing() && ! $this->guard->allows($subject->status, $target)) {
             return;
         }

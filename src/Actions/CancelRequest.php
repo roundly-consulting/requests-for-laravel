@@ -24,6 +24,13 @@ final class CancelRequest
      */
     public function execute(Request $request): Request
     {
+        // Already cancelled: nothing to do, and nothing to announce again.
+        if ($request->status === Status::Cancelled) {
+            return $request;
+        }
+
+        $this->guard->assertNotClosed($request->status, Status::Cancelled);
+
         if ($this->enforcing()) {
             $this->guard->assert($request->status, Status::Cancelled);
         }

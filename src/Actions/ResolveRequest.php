@@ -6,6 +6,7 @@ namespace RoundlyConsulting\Requests\Actions;
 
 use Illuminate\Database\Eloquent\Model;
 use RoundlyConsulting\Approvals\Builders\PendingApproval;
+use RoundlyConsulting\Approvals\Enums\ApprovalStatus;
 use RoundlyConsulting\Approvals\Facades\Approvals;
 use RoundlyConsulting\Approvals\Interfaces\GivesApprovalsInterface;
 use RoundlyConsulting\Requests\Enums\Status;
@@ -13,6 +14,7 @@ use RoundlyConsulting\Requests\Events\ApprovalRecorded;
 use RoundlyConsulting\Requests\Events\ApprovalRevoked;
 use RoundlyConsulting\Requests\Events\RequestRejected;
 use RoundlyConsulting\Requests\Events\RequestStatusChanged;
+use RoundlyConsulting\Requests\Exceptions\RequestAlreadyResolved;
 use RoundlyConsulting\Requests\Models\Request;
 use RoundlyConsulting\Requests\Support\StatusGuard;
 
@@ -47,6 +49,8 @@ final class ResolveRequest
             return $this->expire->execute($request);
         }
 
+        $this->guard->assertNotClosed($request->status, $status);
+
         if ($this->enforcing()) {
             $this->guard->assert($request->status, $status);
         }
@@ -60,7 +64,7 @@ final class ResolveRequest
 
     private function approve(Request $request, Model&GivesApprovalsInterface $actor, ?string $reason): Request
     {
-        $hasApprovalRequest = $request->approvalRequests()->exists();
+        $hasApprovalRequest = $this->hasOpenRound($request);
 
         $this->decide($request, $actor, $reason)->approve();
 
@@ -76,7 +80,7 @@ final class ResolveRequest
 
     private function reject(Request $request, Model&GivesApprovalsInterface $actor, ?string $reason): Request
     {
-        $hasApprovalRequest = $request->approvalRequests()->exists();
+        $hasApprovalRequest = $this->hasOpenRound($request);
 
         $this->decide($request, $actor, $reason)->reject();
 
@@ -108,6 +112,26 @@ final class ResolveRequest
         event(new RequestStatusChanged($request));
 
         return $request;
+    }
+
+    /**
+     * Whether the request is decided through an approval round. Once its latest round is
+     * over (resolved, cancelled or expired) a decision would count towards nothing, so it
+     * is refused until the request is reopened, which opens a fresh round.
+     *
+     * @throws RequestAlreadyResolved
+     */
+    private function hasOpenRound(Request $request): bool
+    {
+        if (! $request->approvalRequests()->exists()) {
+            return false;
+        }
+
+        if (! $request->approvalRequests()->where('status', ApprovalStatus::Pending)->exists()) {
+            throw RequestAlreadyResolved::inStatus($request->status);
+        }
+
+        return true;
     }
 
     private function decide(Request $request, Model $actor, ?string $reason): PendingApproval

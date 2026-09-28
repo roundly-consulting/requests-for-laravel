@@ -24,6 +24,13 @@ final class ExpireRequest
      */
     public function execute(Request $request): Request
     {
+        // Already expired: nothing to do, and nothing to announce again.
+        if ($request->status === Status::Expired) {
+            return $request;
+        }
+
+        $this->guard->assertNotClosed($request->status, Status::Expired);
+
         if ($this->enforcing()) {
             $this->guard->assert($request->status, Status::Expired);
         }
