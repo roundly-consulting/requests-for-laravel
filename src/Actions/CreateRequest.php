@@ -52,7 +52,7 @@ final class CreateRequest implements CreatesRequests
         if ($dto->workflow !== null) {
             $approvers = $dto->stageApprovers !== [] ? $dto->stageApprovers : $dto->approvers;
 
-            Approvals::for($request)->workflow($dto->workflow)->request($approvers);
+            Approvals::request($request)->workflow($dto->workflow)->open($approvers);
 
             return;
         }

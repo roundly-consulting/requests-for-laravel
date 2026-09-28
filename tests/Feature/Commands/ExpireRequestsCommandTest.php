@@ -68,7 +68,7 @@ it('lapses expired pending approval decisions', function (): void {
     $request = Request::factory()->pending()->create();
     $user = User::create();
 
-    Approvals::for($request)->as($user)->expiringAt(now()->subDay())->request();
+    Approvals::for($request)->as($user)->expiringAt(now()->subDay())->ask();
 
     $this->artisan('requests:expire')
         ->expectsOutputToContain('Lapsed 1 expired approval decision(s).')
