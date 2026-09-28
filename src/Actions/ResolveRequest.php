@@ -24,7 +24,10 @@ use RoundlyConsulting\Requests\Support\StatusGuard;
  */
 final class ResolveRequest
 {
-    public function __construct(private readonly StatusGuard $guard = new StatusGuard) {}
+    public function __construct(
+        private readonly StatusGuard $guard = new StatusGuard,
+        private readonly RestartApprovalRound $restart = new RestartApprovalRound,
+    ) {}
 
     public function execute(
         Request $request,
@@ -75,13 +78,25 @@ final class ResolveRequest
         return $request->refresh();
     }
 
+    /**
+     * Withdraw the actor's decision and move the request back to New. When its approval
+     * round is already over, a fresh round opens so the request can be decided again —
+     * all as one unit, so a round that cannot reopen leaves the request as it was.
+     */
     private function reopen(Request $request, Model&GivesApprovalsInterface $actor, ?string $reason): Request
     {
-        $actor->cancelApproval($request, $reason);
+        $request->getConnection()->transaction(function () use ($request, $actor, $reason): void {
+            $actor->cancelApproval($request, $reason);
+
+            $request->update(['status' => Status::New]);
+
+            $this->restart->execute($request);
+        });
 
         event(new ApprovalRevoked($request, $actor));
+        event(new RequestStatusChanged($request));
 
-        return $this->updateRequestStatus($request, Status::New);
+        return $request;
     }
 
     private function decide(Request $request, Model $actor, ?string $reason): PendingApproval
