@@ -242,10 +242,13 @@ app(ResolveRequest::class)->execute($request, $alice, Status::Approved, reason: 
   `Requests::approve($request, $mallory)`, and nothing is recorded. That holds for decisions made
   straight through the approvals engine too (`$mallory->approve($request)`).
 - Once the approval round has resolved, a new decision would count towards nothing, so
-  `approve()` / `reject()` throw `RequestAlreadyResolved` until the request is reopened.
-- `reopen()` withdraws the actor's own decision and moves the request back to `New`. If the round
-  had already resolved, a **fresh round** opens with the same approvers, rule, stages or preset,
-  and everyone decides again — earlier decisions don't carry over. A declared approver that no
+  `approve()` / `reject()` throw `RequestAlreadyResolved` until the request is reopened (straight
+  through the approvals engine, `$alice->approve($request)` throws its
+  `ClosedApprovalRequestException`).
+- `reopen()` moves the request back to `New`. While its round is still open (or it has none) the
+  actor's own decision is withdrawn. If the round is already over, a **fresh round** opens with the
+  same approvers, rule, stages or preset, and everyone decides again — earlier decisions don't
+  carry over. A declared approver that no
   longer exists makes the reopen throw `InvalidApprover` (nothing changes).
 
 ### Approval rules
@@ -339,8 +342,9 @@ Requests::cancel($request);   // status = Cancelled
 Requests::expire($request);   // status = Expired
 ```
 
-Both also close the request's open approval round, so a late decision — through `Requests` or
-straight through the approvals engine — can't resolve it and pull the request back. The round is
+Both also close the request's open approval round, so a late decision can't resolve it and pull
+the request back: through `Requests` it throws `RequestAlreadyResolved`, straight through the
+approvals engine (`$alice->approve($request)`) the engine's `ClosedApprovalRequestException`. The round is
 closed as `cancelled` / `expired` and announced with the engine's `ApprovalRequestResolved` event.
 
 A cancelled or expired request is **closed**, whatever `enforce_transitions` says: a `Cancelled`
@@ -391,9 +395,10 @@ php artisan requests:expire --chunk=1000
 ```
 
 Only **open** (New) requests past their `expires_at` are expired, and their approval rounds are
-closed with them; approved/rejected requests are untouched. The command also lapses any pending approval **decisions** whose own expiry has
-passed (via `Approvals::expire()`); `Requests::expireDue()` expires requests only, so call
-`Approvals::expire()` yourself when you sweep from code.
+closed with them; approved/rejected requests are untouched. The command also lapses the approval **decisions** and rounds on requests whose own
+expiry has passed — scoped to the request model (`Approvals::expire(subjectType: Request::class)`),
+so the rest of your app's approvals are left to their own sweep. `Requests::expireDue()` expires
+requests only, so make that scoped call yourself when you sweep from code.
 
 ### Query scopes
 
@@ -460,8 +465,9 @@ can catch the whole hierarchy at once:
   approver that no longer exists when a reopened request replays its round.
 
 The approvals engine's own exceptions pass through unchanged — notably
-`UnauthorizedApprovalException` for an actor who isn't a declared approver, and
-`InvalidApprovalRequestException` for a round that can't open (an unsaved approver, flat
+`UnauthorizedApprovalException` for an actor who isn't a declared approver,
+`ClosedApprovalRequestException` for a decision made straight on a request whose round is over,
+and `InvalidApprovalRequestException` for a round that can't open (an unsaved approver, flat
 approvers mixed with `stages()`, an unreachable quorum).
 
 Messages are translatable via the `requests::messages` namespace.
