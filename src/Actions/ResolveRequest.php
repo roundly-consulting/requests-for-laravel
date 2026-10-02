@@ -95,14 +95,18 @@ final class ResolveRequest
     }
 
     /**
-     * Withdraw the actor's decision and move the request back to New. When its approval
-     * round is already over, a fresh round opens so the request can be decided again —
-     * all as one unit, so a round that cannot reopen leaves the request as it was.
+     * Move the request back to New. While its decisions still count (no approval round,
+     * or a round still open) the actor's decision is withdrawn; once the round is over the
+     * engine refuses that withdrawal, and a fresh round opens instead so the request can
+     * be decided again — all as one unit, so a round that cannot reopen leaves the
+     * request as it was.
      */
     private function reopen(Request $request, Model&GivesApprovalsInterface $actor, ?string $reason): Request
     {
         $request->getConnection()->transaction(function () use ($request, $actor, $reason): void {
-            $actor->cancelApproval($request, $reason);
+            if ($this->acceptsDecisions($request)) {
+                $actor->cancelApproval($request, $reason);
+            }
 
             $request->update(['status' => Status::New]);
 
@@ -133,6 +137,16 @@ final class ResolveRequest
         }
 
         return true;
+    }
+
+    /**
+     * Whether a decision on the request still counts: it has no approval round (decisions
+     * stand alone) or a round is still pending.
+     */
+    private function acceptsDecisions(Request $request): bool
+    {
+        return ! $request->approvalRequests()->exists()
+            || $request->approvalRequests()->where('status', ApprovalStatus::Pending)->exists();
     }
 
     private function decide(Request $request, Model $actor, ?string $reason): PendingApproval

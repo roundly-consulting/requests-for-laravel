@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\Approvals\Enums\ApprovalStatus;
 use RoundlyConsulting\Approvals\Events\ApprovalRequestResolved;
 use RoundlyConsulting\Approvals\Events\ApprovalStatusChanged;
+use RoundlyConsulting\Approvals\Exceptions\ClosedApprovalRequestException;
 use RoundlyConsulting\Approvals\Models\ApprovalRequest;
 use RoundlyConsulting\Requests\Actions\ResolveRequest;
 use RoundlyConsulting\Requests\Enums\Status;
@@ -36,8 +37,8 @@ it('closes the approval round on cancel so a late approval cannot revive the req
 
     expect($request->approvalRequests()->firstOrFail()->status)->toBe(ApprovalStatus::Cancelled);
 
-    // A late decision straight through the approvals engine.
-    $alice->approve($request);
+    // A late decision straight through the approvals engine is refused.
+    expect(fn () => $alice->approve($request))->toThrow(ClosedApprovalRequestException::class);
 
     expect($request->fresh()?->status)->toBe(Status::Cancelled)
         ->and($request->currentApprovalStatus())->toBe(ApprovalStatus::Cancelled);
@@ -52,7 +53,7 @@ it('closes the approval round on expire so a late approval cannot revive the req
 
     expect($request->approvalRequests()->firstOrFail()->status)->toBe(ApprovalStatus::Expired);
 
-    $alice->approve($request);
+    expect(fn () => $alice->approve($request))->toThrow(ClosedApprovalRequestException::class);
 
     expect($request->fresh()?->status)->toBe(Status::Expired);
 });
@@ -65,7 +66,7 @@ it('closes the approval round of every request the sweep expires', function (): 
     expect(Requests::expireDue())->toBe(1)
         ->and($request->approvalRequests()->firstOrFail()->status)->toBe(ApprovalStatus::Expired);
 
-    $alice->approve($request);
+    expect(fn () => $alice->approve($request))->toThrow(ClosedApprovalRequestException::class);
 
     expect($request->fresh()?->status)->toBe(Status::Expired);
 });
