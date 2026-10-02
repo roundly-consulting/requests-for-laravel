@@ -7,6 +7,7 @@ namespace RoundlyConsulting\Requests\Commands;
 use Illuminate\Console\Command;
 use RoundlyConsulting\Approvals\ApprovalsManager;
 use RoundlyConsulting\Requests\RequestManager;
+use RoundlyConsulting\Requests\Support\RequestModel;
 
 final class ExpireRequestsCommand extends Command
 {
@@ -25,8 +26,10 @@ final class ExpireRequestsCommand extends Command
             : "Expired {$count} request(s).");
 
         if (! $dryRun) {
-            // Lapse any pending approval decisions whose own expiry has passed.
-            $lapsed = $approvals->expire();
+            // Lapse the approval decisions on requests whose own expiry has passed — only
+            // those: the rest of the app's approvals are its own to sweep.
+            $model = RequestModel::class();
+            $lapsed = $approvals->expire(subjectType: (new $model)->getMorphClass());
 
             if ($lapsed > 0) {
                 $this->info("Lapsed {$lapsed} expired approval decision(s).");

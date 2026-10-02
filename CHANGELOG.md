@@ -24,7 +24,8 @@ Initial public release.
   last one resolved; `cancel()` / `expire()` close the open round; a cancelled or expired request
   stays closed (`RequestAlreadyResolved`).
 - Auto-expiry with a default TTL, `Requests::expireDue(dryRun:, chunk:)` (the `ExpireDueRequests`
-  action) and the `requests:expire` command (`--dry-run`, `--chunk`) that wraps it.
+  action) and the `requests:expire` command (`--dry-run`, `--chunk`) that wraps it and lapses
+  expired approval decisions on requests only (`Approvals::expire()` scoped to the request model).
 - `Requests::canTransition($request, $status)` asks the lifecycle graph whether a move is allowed.
 - Query scopes such as `pending()`, `approved()`, `expiringBefore()` and `authoredBy()`, and
   approval-progress helpers on the model.
