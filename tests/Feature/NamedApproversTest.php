@@ -12,6 +12,7 @@ use RoundlyConsulting\Approvals\Models\ApprovalRequest;
 use RoundlyConsulting\Requests\Actions\CreateRequest;
 use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
 use RoundlyConsulting\Requests\Enums\Status;
+use RoundlyConsulting\Requests\Exceptions\InvalidApprover;
 use RoundlyConsulting\Requests\Facades\Requests;
 use RoundlyConsulting\Requests\Models\Request;
 use RoundlyConsulting\Requests\Tests\User;
@@ -143,3 +144,26 @@ it('refuses flat approvers mixed with stages instead of dropping them', function
 
     expect(Request::query()->count())->toBe(0);
 });
+
+it('refuses a bare approver id handed to the raw action', function (Closure $dto): void {
+    config()->set('approvals.workflows.release', [
+        'stages' => [
+            ['rule' => ApprovalRule::Unanimous->value, 'required_approvers' => 1, 'name' => 'engineering'],
+            ['rule' => ApprovalRule::Any->value, 'required_approvers' => 1, 'name' => 'product'],
+        ],
+    ]);
+
+    $alice = User::create();
+
+    expect(fn () => app(CreateRequest::class)->execute($dto($alice)))
+        ->toThrow(InvalidApprover::class, 'An approver must be an Eloquent model, int given')
+        ->and(Request::query()->count())->toBe(0)
+        ->and(ApprovalRequest::query()->count())->toBe(0);
+})->with([
+    'only an id' => [fn (User $alice): CreateRequestDto => new CreateRequestDto(approvers: [2])],
+    'a model then an id' => [fn (User $alice): CreateRequestDto => new CreateRequestDto(approvers: [$alice, 2])],
+    'an id in a preset stage' => [fn (User $alice): CreateRequestDto => new CreateRequestDto(
+        workflow: 'release',
+        stageApprovers: [[$alice], [2]],
+    )],
+]);

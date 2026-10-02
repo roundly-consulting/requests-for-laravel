@@ -10,14 +10,24 @@ use Illuminate\Support\Carbon;
 use RoundlyConsulting\Approvals\Facades\Approvals;
 use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
 use RoundlyConsulting\Requests\Events\RequestCreated;
+use RoundlyConsulting\Requests\Exceptions\InvalidApprover;
 use RoundlyConsulting\Requests\Models\Request;
 use RoundlyConsulting\Requests\Support\DefaultTtl;
 use RoundlyConsulting\Requests\Support\RequestModel;
 
 final class CreateRequest
 {
+    /**
+     * @throws InvalidApprover when an approver is not a model (a bare id)
+     */
     public function execute(CreateRequestDto $dto): Request
     {
+        $this->assertModels($dto->approvers);
+
+        foreach ($dto->stageApprovers as $group) {
+            $this->assertModels($group);
+        }
+
         $request = $this->newModelInstance([
             'status' => $dto->status,
             'type' => $dto->type,
@@ -82,6 +92,23 @@ final class CreateRequest
             ->from($dto->approvers)
             ->rule($dto->rule, $dto->quorum)
             ->open();
+    }
+
+    /**
+     * Refuse anything but a model among the approvers before anything is written: a bare
+     * id names no model type, so the round could never enforce it.
+     *
+     * @param  array<array-key, mixed>  $approvers
+     *
+     * @throws InvalidApprover
+     */
+    private function assertModels(array $approvers): void
+    {
+        foreach ($approvers as $approver) {
+            if (! $approver instanceof Model) {
+                throw InvalidApprover::notAModel($approver);
+            }
+        }
     }
 
     /**

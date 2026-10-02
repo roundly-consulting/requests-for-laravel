@@ -196,7 +196,8 @@ $request = app(CreateRequest::class)->execute(new CreateRequestDto(
 ```
 
 Approvers must be **saved models**: a bare id names no model type, so it could never be enforced,
-and `requireApprovalsFrom()` refuses one with `InvalidApprover`. The request and its approval
+and `requireApprovalsFrom()` (or `CreateRequest` itself, for a DTO's `approvers` / `stageApprovers`)
+refuses one with `InvalidApprover`. The request and its approval
 round are written together — if the round can't open (an unsaved approver, an unknown workflow
 preset), no request is left behind. `CreateRequest` dispatches a `RequestCreated` event.
 
