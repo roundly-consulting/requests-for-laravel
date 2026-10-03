@@ -10,10 +10,9 @@ use RoundlyConsulting\Requests\Models\Request;
 /**
  * Resolves the Eloquent model backing requests from `requests.model`.
  *
- * The toolkit's ModelResolver validates that the configured value is a real
- * Eloquent model; anything that isn't a Request (so it can't answer the
- * package's scopes, status lifecycle, or approval flow) falls back to the
- * packaged model.
+ * Absent config resolves the packaged model; anything else must be that model or a subclass of
+ * it, or the toolkit's ModelResolver throws InvalidConfigurationException naming the key — a
+ * foreign class is never silently replaced.
  */
 final class RequestModel
 {
@@ -22,8 +21,6 @@ final class RequestModel
      */
     public static function class(): string
     {
-        $model = ModelResolver::for('requests.model', Request::class);
-
-        return is_a($model, Request::class, true) ? $model : Request::class;
+        return ModelResolver::for('requests.model', Request::class);
     }
 }

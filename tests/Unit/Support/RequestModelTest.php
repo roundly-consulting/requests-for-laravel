@@ -22,10 +22,14 @@ it('resolves a configured request subclass', function (): void {
     expect(RequestModel::class())->toBe($custom::class);
 });
 
-it('falls back to the packaged model when the configured model is not a request', function (): void {
+it('refuses a foreign model instead of falling back to the packaged one', function (): void {
+    // The toolkit refuses any class that is not the packaged model or a subclass of it.
     config()->set('requests.model', User::class);
 
-    expect(RequestModel::class())->toBe(Request::class);
+    expect(fn (): string => RequestModel::class())->toThrow(
+        InvalidConfigurationException::class,
+        'Configuration value [requests.model] must be a class-string of ['.Request::class.'], ['.User::class.'] given.',
+    );
 });
 
 it('throws when the configured model is not an eloquent model', function (): void {
