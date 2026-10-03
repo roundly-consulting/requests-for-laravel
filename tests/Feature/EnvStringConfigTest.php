@@ -29,11 +29,11 @@ it('stamps the expiry from a numeric-string default ttl', function (): void {
     Carbon::setTestNow();
 });
 
-it('treats an empty default ttl as no expiry', function (): void {
-    config()->set('requests.default_ttl', '');
+it('treats an unset default ttl as no expiry', function (?string $ttl): void {
+    config()->set('requests.default_ttl', $ttl);
 
     expect(Requests::make()->create()->expires_at)->toBeNull();
-});
+})->with(['absent' => null, 'blank' => '', 'whitespace' => '  ']);
 
 it('refuses a default ttl that is not a positive whole number of minutes', function (mixed $ttl): void {
     config()->set('requests.default_ttl', $ttl);
@@ -57,6 +57,16 @@ it('reads a string "true" transition guard as on', function (): void {
     expect(fn () => Requests::expire(Request::factory()->approved()->create()))
         ->toThrow(InvalidStatusTransition::class);
 });
+
+it('reads a blank transition guard as not set, so off (strict config)', function (string $blank): void {
+    config()->set('requests.enforce_transitions', $blank);
+
+    $request = Request::factory()->rejected()->create();
+
+    Requests::approve($request, User::create());
+
+    expect($request->fresh()?->status)->toBe(Status::Approved);
+})->with(['blank' => '', 'whitespace' => ' ']);
 
 it('refuses a mistyped transition guard instead of reading it as off (strict config)', function (): void {
     config()->set('requests.enforce_transitions', 'enforced');
@@ -96,3 +106,15 @@ it('skips the facade alias for a string "false"', function (): void {
 
     expect($loader->getAliases())->not->toHaveKey('Requests');
 });
+
+it('registers the facade alias when the switch is blank (strict config)', function (string $blank): void {
+    config()->set('requests.register_facade_alias', $blank);
+
+    $loader = AliasLoader::getInstance();
+    $loader->setAliases(array_diff_key($loader->getAliases(), ['Requests' => true]));
+
+    $provider = new RequestsServiceProvider(app());
+    (new ReflectionMethod($provider, 'registerFacadeAlias'))->invoke($provider);
+
+    expect($loader->getAliases())->toHaveKey('Requests');
+})->with(['blank' => '', 'whitespace' => ' ']);

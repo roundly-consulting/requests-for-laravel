@@ -58,8 +58,8 @@ return [
     | example re-approving a rejected request) throw InvalidStatusTransition.
     | Defaults to false to preserve the original toggle behaviour; turn it on
     | for a stricter, guarded workflow. Env strings ("true"/"1"/"on"/"yes",
-    | "false"/"0"/"off"/"no") work; anything else throws an
-    | InvalidConfigurationException.
+    | "false"/"0"/"off"/"no") work; a blank value is not set (so false), and
+    | anything else throws an InvalidConfigurationException.
     |
     */
 
@@ -72,7 +72,8 @@ return [
     |
     | When set (in minutes) and a request is created without an explicit expiry,
     | the request is stamped with an expires_at of now() plus this many minutes.
-    | Null means requests never expire unless an expiry is provided explicitly.
+    | Null (or blank) means requests never expire unless an expiry is provided
+    | explicitly.
     | A numeric string (an env() value) works too; anything but a positive
     | whole number throws an InvalidConfigurationException.
     |

@@ -9,7 +9,7 @@ use RoundlyConsulting\PackageToolkit\Support\Config;
 
 /**
  * Reads `requests.default_ttl`: how many minutes a request created without an explicit
- * expiry lives. Null or empty means requests don't expire by default. An int or a
+ * expiry lives. Not set (null or blank: `''` or whitespace) means requests don't expire by default. An int or a
  * numeric string (an `env()` value) is accepted; anything else — a word, a fraction, a
  * zero or negative figure — fails loudly instead of silently never expiring.
  *
@@ -27,7 +27,7 @@ final class DefaultTtl
     {
         $ttl = config('requests.default_ttl');
 
-        if ($ttl === null || $ttl === '') {
+        if ($ttl === null || (is_string($ttl) && trim($ttl) === '')) {
             return null;
         }
 
