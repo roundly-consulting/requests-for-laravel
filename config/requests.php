@@ -40,7 +40,8 @@ return [
     | The key type used for the polymorphic author column. Use "uuid" or "ulid"
     | when the models that column points at use UUID/ULID primary keys, otherwise
     | leave it as "bigint". Your morph targets must share one key type; set this
-    | to match. Any unrecognized value falls back to "bigint".
+    | to match. Any other value throws an InvalidConfigurationException when
+    | the migration runs.
     |
     | Supported: "bigint", "uuid", "ulid"
     |
@@ -56,7 +57,9 @@ return [
     | When enabled, the lifecycle graph is enforced and illegal moves (for
     | example re-approving a rejected request) throw InvalidStatusTransition.
     | Defaults to false to preserve the original toggle behaviour; turn it on
-    | for a stricter, guarded workflow.
+    | for a stricter, guarded workflow. Env strings ("true"/"1"/"on"/"yes",
+    | "false"/"0"/"off"/"no") work; anything else throws an
+    | InvalidConfigurationException.
     |
     */
 

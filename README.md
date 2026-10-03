@@ -80,13 +80,14 @@ return [
 | Key | Type | Default | Purpose |
 |---|---|---|---|
 | `model` | `class-string` | `Request::class` | The request model resolved by `CreateRequest`. Point it at a subclass to extend behaviour. |
-| `key_type` | `string` | `'bigint'` (env `REQUESTS_KEY_TYPE`) | Key type of the polymorphic `author` column: `bigint`, `uuid` or `ulid`. Match the primary keys of the models that author requests; any other value falls back to `bigint`. Read when the migration runs, so set it before `php artisan migrate`. |
+| `key_type` | `string` | `'bigint'` (env `REQUESTS_KEY_TYPE`) | Key type of the polymorphic `author` column: `bigint`, `uuid` or `ulid`. Match the primary keys of the models that author requests; any other value throws `InvalidConfigurationException`. Read when the migration runs, so set it before `php artisan migrate`. |
 | `enforce_transitions` | `bool` | `false` | When `true`, illegal status moves (e.g. re-approving a rejected request) throw `InvalidStatusTransition`. Off by default to preserve the original toggle behaviour. |
 | `default_ttl` | `?int` | `null` | When set (in minutes), requests created without an explicit expiry are stamped with `now()->addMinutes(ttl)`. `null` (or empty) means requests never expire automatically. Anything but a positive whole number throws `InvalidConfigurationException`. |
 | `register_facade_alias` | `bool` | `true` | Register the short `Requests` class alias for the facade. Skipped automatically if the host has already aliased the name. The fully-qualified facade always works. |
 
 Values from `env()` arrive as strings and are read accordingly: `'60'` is a 60-minute TTL, and
-`'true'`/`'1'`/`'on'`/`'yes'` (or `'false'`/`'0'`/`'off'`/`'no'`) switch the two flags.
+`'true'`/`'1'`/`'on'`/`'yes'` (or `'false'`/`'0'`/`'off'`/`'no'`) switch the two flags. Any other
+flag value throws `InvalidConfigurationException` instead of quietly reading as the default.
 
 ## Concepts
 
