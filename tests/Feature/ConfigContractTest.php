@@ -17,11 +17,6 @@ it('ships exactly the config keys it reads', function (): void {
     expect(__DIR__.'/../../config/requests.php')->toSatisfyConfigContract(
         [__DIR__.'/../../src', __DIR__.'/../../database'],
         [
-            // `requests.model` is read through the toolkit's `ModelResolver::for(…)` seam
-            // (via Support\RequestModel), not as a `config(` token, so the prefix is what
-            // makes that real read visible to the scraper.
-            'extraReadPrefixes' => ['requests.'],
-
             // Deliberately NO `excludeFromReverse` for the provider. The testing README's
             // example excludes the service provider on the grounds that "a render is not a
             // read" — but this provider's `contributesToAbout()` closure calls
