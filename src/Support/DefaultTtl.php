@@ -31,6 +31,6 @@ final class DefaultTtl
             return null;
         }
 
-        return Config::intBetween('requests.default_ttl', 1, self::MAX_MINUTES, 1);
+        return Config::integer('requests.default_ttl', 1, min: 1, max: self::MAX_MINUTES);
     }
 }
