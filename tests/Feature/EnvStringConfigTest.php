@@ -58,6 +58,22 @@ it('reads a string "true" transition guard as on', function (): void {
         ->toThrow(InvalidStatusTransition::class);
 });
 
+it('refuses a mistyped transition guard instead of reading it as off (strict config)', function (): void {
+    config()->set('requests.enforce_transitions', 'enforced');
+
+    expect(fn () => Requests::expire(Request::factory()->approved()->create()))
+        ->toThrow(InvalidConfigurationException::class, 'Configuration value [requests.enforce_transitions] must be a boolean');
+});
+
+it('refuses to migrate on an unrecognized key type (strict config)', function (): void {
+    config()->set('requests.key_type', 'nonsense');
+
+    expect(function (): void {
+        $migration = require __DIR__.'/../../database/migrations/create_requests_table.php';
+        $migration->up();
+    })->toThrow(InvalidConfigurationException::class, 'Configuration value [requests.key_type] must be one of [bigint, uuid, ulid] (case-insensitive), [nonsense] given.');
+});
+
 it('reports env-string config in the about section', function (): void {
     config()->set('requests.enforce_transitions', 'on');
     config()->set('requests.default_ttl', '90');
