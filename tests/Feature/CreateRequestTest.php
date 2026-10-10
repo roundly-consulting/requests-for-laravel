@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\Approvals\DataTransferObjects\StageDefinition;
 use RoundlyConsulting\Approvals\Enums\ApprovalRule;
@@ -57,9 +58,16 @@ it('creates request with all details', function () {
         'type' => 'Claim',
         'title' => 'Its mine!',
         'description' => 'This is mine and only mine.',
-        'meta' => '{"ip":"127.0.0.1"}',
-        'require_approvals_from' => json_encode([$author->id]),
     ]);
+
+    // The json columns are compared decoded, not as SQL text. Sqlite compares the stored
+    // text and Postgres casts the literal to jsonb, but MySQL stores its own normalised
+    // form (`{"ip": "127.0.0.1"}`) and reads a bound string as a json string scalar, so a
+    // raw-text `where` can never match there.
+    $row = DB::table('requests')->where('id', $request->id)->first();
+
+    expect(json_decode((string) $row?->meta, true))->toBe(['ip' => '127.0.0.1'])
+        ->and(json_decode((string) $row?->require_approvals_from, true))->toBe([$author->id]);
 });
 
 it('stamps expires_at from the default ttl when set', function () {
