@@ -6,6 +6,7 @@ namespace RoundlyConsulting\Requests\Actions;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use RoundlyConsulting\Approvals\Builders\PendingApprovalRequest;
 use RoundlyConsulting\Approvals\DataTransferObjects\NamedApprover;
 use RoundlyConsulting\Approvals\DataTransferObjects\StageDefinition;
 use RoundlyConsulting\Approvals\Enums\ApprovalStatus;
@@ -19,9 +20,9 @@ use RoundlyConsulting\Requests\Models\Request;
  * Opens a fresh approval round for a reopened request whose latest round is over, so it
  * can be decided again. The round replays the latest one's shape — the same workflow
  * preset, the same stages, or the same named approvers under the same rule — through the
- * approvals builder, so its approvers stay enforced. Decisions from the finished round
- * don't carry over. A request that never had a round, or whose round is still open, is
- * left alone.
+ * approvals builder, so its approvers stay enforced, and a staged or flat round expires
+ * with the request. Decisions from the finished round don't carry over. A request that
+ * never had a round, or whose round is still open, is left alone.
  *
  * @internal
  */
@@ -49,7 +50,7 @@ final class RestartApprovalRound
         }
 
         if ($latest->staged) {
-            return Approvals::request($request)
+            return $this->expiringWith($request, Approvals::request($request))
                 ->stages(array_values(array_map(fn (ApprovalRequestStage $stage): StageDefinition => new StageDefinition(
                     approvers: $this->models($stage->namedApprovers()),
                     rule: $stage->rule,
@@ -61,10 +62,15 @@ final class RestartApprovalRound
                 ->open();
         }
 
-        return Approvals::request($request)
+        return $this->expiringWith($request, Approvals::request($request))
             ->from($this->models($latest->namedApprovers()))
             ->rule($latest->rule, $latest->quorum)
             ->open();
+    }
+
+    private function expiringWith(Request $request, PendingApprovalRequest $round): PendingApprovalRequest
+    {
+        return $request->expires_at === null ? $round : $round->expiringAt($request->expires_at);
     }
 
     /**

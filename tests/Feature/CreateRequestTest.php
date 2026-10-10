@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
+use RoundlyConsulting\Approvals\DataTransferObjects\StageDefinition;
+use RoundlyConsulting\Approvals\Enums\ApprovalRule;
 use RoundlyConsulting\Requests\Actions\CreateRequest;
 use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
 use RoundlyConsulting\Requests\Enums\Status;
 use RoundlyConsulting\Requests\Events\RequestCreated;
+use RoundlyConsulting\Requests\Facades\Requests;
 use RoundlyConsulting\Requests\Tests\User;
 
 it('creates request', function () {
@@ -85,4 +88,31 @@ it('leaves expires_at null without a ttl', function () {
     $request = (new CreateRequest)->execute(new CreateRequestDto);
 
     expect($request->expires_at)->toBeNull();
+});
+
+/**
+ * C-2: the request's deadline never reached its approval round, so the engine kept
+ * taking decisions on a request the package itself reported as expired.
+ */
+it('gives the approval round the request expiry', function (): void {
+    Carbon::setTestNow('2026-10-01 12:00:00');
+
+    $alice = User::create();
+    $bob = User::create();
+    $deadline = Carbon::parse('2026-10-08 12:00:00');
+
+    $flat = Requests::make()->requireApprovalsFrom([$alice, $bob])->expiresAt($deadline)->create();
+    $staged = Requests::make()->stages([
+        new StageDefinition([$alice], ApprovalRule::Unanimous, name: 'first'),
+        new StageDefinition([$bob], ApprovalRule::Unanimous, name: 'second'),
+    ])->expiresAt($deadline)->create();
+
+    config()->set('requests.default_ttl', 60);
+    $defaulted = Requests::make()->requireApprovalsFrom([$alice])->create();
+
+    expect($flat->approvalRequests()->firstOrFail()->expires_at?->toDateTimeString())->toBe('2026-10-08 12:00:00')
+        ->and($staged->approvalRequests()->firstOrFail()->expires_at?->toDateTimeString())->toBe('2026-10-08 12:00:00')
+        ->and($defaulted->approvalRequests()->firstOrFail()->expires_at?->toDateTimeString())->toBe('2026-10-01 13:00:00');
+
+    Carbon::setTestNow();
 });

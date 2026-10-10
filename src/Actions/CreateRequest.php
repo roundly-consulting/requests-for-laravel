@@ -7,6 +7,7 @@ namespace RoundlyConsulting\Requests\Actions;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use RoundlyConsulting\Approvals\Builders\PendingApprovalRequest;
 use RoundlyConsulting\Approvals\Facades\Approvals;
 use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
 use RoundlyConsulting\Requests\Events\RequestCreated;
@@ -61,6 +62,11 @@ final class CreateRequest
      * delegates) may decide. A named workflow preset wins, then an explicit staged
      * pipeline, then the flat declared approver set. A request without approvers opens
      * nothing and resolves on the first decision.
+     *
+     * A staged or flat round expires with the request, so the engine stops taking
+     * decisions once its deadline passes. A workflow preset's round keeps the preset's own
+     * expiry (the preset builder takes none); the request's deadline still refuses a late
+     * decision there, because `approve()` / `reject()` expire an overdue request first.
      */
     private function openApprovalRequest(Request $request, CreateRequestDto $dto): void
     {
@@ -75,7 +81,7 @@ final class CreateRequest
         if ($dto->stages !== []) {
             // Flat approvers passed alongside stages are handed on too, so the engine
             // refuses the mix instead of silently dropping them.
-            Approvals::request($request)
+            $this->expiringWith($request, Approvals::request($request))
                 ->from($dto->approvers)
                 ->stages($dto->stages)
                 ->continueOnRejection(! $dto->rejectOnStageRejection)
@@ -88,10 +94,15 @@ final class CreateRequest
             return;
         }
 
-        Approvals::request($request)
+        $this->expiringWith($request, Approvals::request($request))
             ->from($dto->approvers)
             ->rule($dto->rule, $dto->quorum)
             ->open();
+    }
+
+    private function expiringWith(Request $request, PendingApprovalRequest $round): PendingApprovalRequest
+    {
+        return $request->expires_at === null ? $round : $round->expiringAt($request->expires_at);
     }
 
     /**

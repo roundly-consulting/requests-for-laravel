@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use RoundlyConsulting\Approvals\DataTransferObjects\StageDefinition;
@@ -308,4 +309,29 @@ it('falls back to the decide-approval ability when none is configured', function
 
     expect(fn () => Requests::reopen($request, $alice))->toThrow(UnauthorizedApprovalException::class)
         ->and($request->fresh()?->status)->toBe(Status::Approved);
+});
+
+/**
+ * C-2: every round carries the request's deadline — the fresh one a reopen opens too.
+ */
+it('gives the reopened round the request expiry', function (): void {
+    Carbon::setTestNow('2026-10-01 12:00:00');
+
+    $alice = User::create();
+    $manager = User::create();
+
+    $flat = Requests::make()->requireApprovalsFrom([$alice])->expiresAt(now()->addDays(7))->create();
+    Requests::approve($flat, $alice);
+    Requests::reopen($flat, $alice);
+
+    $staged = Requests::make()->stages([
+        new StageDefinition([$manager], ApprovalRule::Unanimous, name: 'manager'),
+    ])->expiresAt(now()->addDays(7))->create();
+    Requests::approve($staged, $manager);
+    Requests::reopen($staged, $manager);
+
+    expect($flat->approvalRequests()->latest('id')->firstOrFail()->expires_at?->toDateTimeString())->toBe('2026-10-08 12:00:00')
+        ->and($staged->approvalRequests()->latest('id')->firstOrFail()->expires_at?->toDateTimeString())->toBe('2026-10-08 12:00:00');
+
+    Carbon::setTestNow();
 });

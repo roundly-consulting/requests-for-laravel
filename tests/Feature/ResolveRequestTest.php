@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\Approvals\Enums\ApprovalStatus;
 use RoundlyConsulting\Requests\Actions\CreateRequest;
@@ -10,6 +11,7 @@ use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
 use RoundlyConsulting\Requests\Enums\Status;
 use RoundlyConsulting\Requests\Events\ApprovalRecorded;
 use RoundlyConsulting\Requests\Events\ApprovalRevoked;
+use RoundlyConsulting\Requests\Events\RequestExpired;
 use RoundlyConsulting\Requests\Events\RequestRejected;
 use RoundlyConsulting\Requests\Events\RequestStatusChanged;
 use RoundlyConsulting\Requests\Exceptions\RequestAlreadyResolved;
@@ -194,3 +196,37 @@ it('refuses to reopen a copy loaded before the request was cancelled', function 
         ->and($request->fresh()?->status)->toBe(Status::Cancelled)
         ->and($request->approvalRequests()->count())->toBe(1);
 });
+
+/**
+ * C-2: approve and reject checked the status only, so a request past its deadline — one
+ * `isExpired()` and the `expired()` scope already report — was still decided until the
+ * sweep caught up. It is expired on the spot instead, and the decision refused.
+ */
+it('expires an overdue request instead of deciding it', function (bool $withApprover): void {
+    Carbon::setTestNow('2026-10-01 12:00:00');
+
+    $alice = User::create();
+    $builder = Requests::make()->expiresAt(now()->addDays(7));
+
+    if ($withApprover) {
+        $builder->requireApprovalsFrom([$alice]);
+    }
+
+    $request = $builder->create();
+
+    Carbon::setTestNow('2026-10-09 12:00:00');
+
+    Event::fake([RequestExpired::class]);
+
+    expect(fn () => Requests::approve($request, $alice))
+        ->toThrow(fn (RequestAlreadyResolved $e) => expect($e->status)->toBe(Status::Expired))
+        ->and(fn () => Requests::reject($request, $alice))
+        ->toThrow(fn (RequestAlreadyResolved $e) => expect($e->status)->toBe(Status::Expired))
+        ->and($request->fresh()?->status)->toBe(Status::Expired)
+        ->and($alice->hasApproved($request))->toBeFalse()
+        ->and($alice->hasRejected($request))->toBeFalse();
+
+    Event::assertDispatchedTimes(RequestExpired::class, 1);
+
+    Carbon::setTestNow();
+})->with(['with an approver' => true, 'without approvers' => false]);

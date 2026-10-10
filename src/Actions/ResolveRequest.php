@@ -34,6 +34,7 @@ final class ResolveRequest
         private readonly CancelRequest $cancel = new CancelRequest,
         private readonly ExpireRequest $expire = new ExpireRequest,
         private readonly DecisionGate $gate = new DecisionGate,
+        private readonly ExpireOverdueRequest $overdue = new ExpireOverdueRequest,
     ) {}
 
     public function execute(
@@ -50,6 +51,12 @@ final class ResolveRequest
 
         if ($status === Status::Expired) {
             return $this->expire->execute($request);
+        }
+
+        // A request past its deadline is not decided: it is expired on the spot (as the
+        // sweep would) and the decision refused below, as on any expired request.
+        if ($status !== Status::New && $request->isExpired()) {
+            $this->overdue->execute($request);
         }
 
         $this->guard->assertNotClosed($request->status, $status);
