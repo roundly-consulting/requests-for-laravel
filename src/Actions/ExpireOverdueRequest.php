@@ -6,13 +6,18 @@ namespace RoundlyConsulting\Requests\Actions;
 
 use RoundlyConsulting\Approvals\Enums\ApprovalStatus;
 use RoundlyConsulting\Requests\Enums\Status;
-use RoundlyConsulting\Requests\Exceptions\InvalidStatusTransition;
-use RoundlyConsulting\Requests\Exceptions\RequestAlreadyResolved;
 use RoundlyConsulting\Requests\Models\Request;
 use RoundlyConsulting\Requests\Support\StatusGuard;
 use RoundlyConsulting\Requests\Support\StatusWriter;
 
-final class ExpireRequest
+/**
+ * Expires a request because its deadline passed — only if, on its locked row, it is still
+ * open and past due. A request decided, cancelled, expired or given a new deadline since
+ * the caller loaded it is left alone. The sweep and an overdue decision use it.
+ *
+ * @internal
+ */
+final class ExpireOverdueRequest
 {
     public function __construct(
         private readonly StatusGuard $guard = new StatusGuard,
@@ -20,21 +25,17 @@ final class ExpireRequest
     ) {}
 
     /**
-     * Expire the request and close its open approval round, so no later decision can
-     * resolve it. The checks run on the stored status, under a lock: an expired request is
-     * left as it is (nothing announced again), a cancelled one stays closed, and with
-     * `requests.enforce_transitions` on the lifecycle graph decides.
-     *
-     * @throws RequestAlreadyResolved
-     * @throws InvalidStatusTransition
+     * @return bool whether this call expired the request
      */
-    public function execute(Request $request): Request
+    public function execute(Request $request): bool
     {
         $writer = new StatusWriter($this->guard);
 
         $expired = $writer->move(
             $request,
             Status::Expired,
+            strict: false,
+            when: static fn (Request $locked): bool => $locked->isExpired(),
             alongside: fn (): int => $this->closeRound->execute($request, ApprovalStatus::Expired),
         );
 
@@ -42,6 +43,6 @@ final class ExpireRequest
             $writer->announce($request);
         }
 
-        return $request;
+        return $expired;
     }
 }

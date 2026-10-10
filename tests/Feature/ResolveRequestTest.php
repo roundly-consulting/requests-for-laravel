@@ -12,6 +12,9 @@ use RoundlyConsulting\Requests\Events\ApprovalRecorded;
 use RoundlyConsulting\Requests\Events\ApprovalRevoked;
 use RoundlyConsulting\Requests\Events\RequestRejected;
 use RoundlyConsulting\Requests\Events\RequestStatusChanged;
+use RoundlyConsulting\Requests\Exceptions\RequestAlreadyResolved;
+use RoundlyConsulting\Requests\Facades\Requests;
+use RoundlyConsulting\Requests\Models\Request;
 use RoundlyConsulting\Requests\Tests\User;
 
 it('approves immediately when no approvers are required', function () {
@@ -155,4 +158,39 @@ it('writes the rejection before announcing it on a request without approvers', f
     (new ResolveRequest)->execute($request, User::create(), Status::Rejected);
 
     expect($seen)->toBe([Status::Rejected, Status::Rejected]);
+});
+
+/**
+ * C-4 (d): a request without approvers resolved on a decision checked against the caller's
+ * copy, so a copy loaded before a cancel turned the Cancelled request Approved.
+ */
+it('refuses a decision on a copy loaded before the request was cancelled', function (): void {
+    $alice = User::create();
+    $request = Requests::make()->create();
+    $stale = Request::query()->findOrFail($request->getKey());
+
+    Requests::cancel($request);
+
+    expect(fn () => Requests::approve($stale, $alice))
+        ->toThrow(fn (RequestAlreadyResolved $e) => expect($e->status)->toBe(Status::Cancelled))
+        ->and($request->fresh()?->status)->toBe(Status::Cancelled)
+        ->and($alice->hasApproved($request))->toBeFalse();
+});
+
+/**
+ * The same stale-copy write on reopen: a copy loaded before a cancel reopened the
+ * Cancelled request with a fresh approval round.
+ */
+it('refuses to reopen a copy loaded before the request was cancelled', function (): void {
+    $alice = User::create();
+    $request = Requests::make()->requireApprovalsFrom([$alice])->create();
+    Requests::approve($request, $alice);
+
+    $stale = Request::query()->findOrFail($request->getKey());
+
+    Requests::cancel($request);
+
+    expect(fn () => Requests::reopen($stale, $alice))->toThrow(RequestAlreadyResolved::class)
+        ->and($request->fresh()?->status)->toBe(Status::Cancelled)
+        ->and($request->approvalRequests()->count())->toBe(1);
 });

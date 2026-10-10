@@ -12,10 +12,14 @@ use RoundlyConsulting\Requests\Support\RequestModel;
  * Expires every open request whose expiry deadline has passed, in id-ordered
  * chunks so each expired row safely leaves the scanned set. A dry run only counts
  * the due requests.
+ *
+ * Each row is expired only if it is still open and past due when its turn comes: a
+ * request decided, cancelled or expired (by an overlapping sweep) after its chunk was
+ * read is left alone, and not counted.
  */
 final readonly class ExpireDueRequests
 {
-    public function __construct(private ExpireRequest $expire) {}
+    public function __construct(private ExpireOverdueRequest $expire = new ExpireOverdueRequest) {}
 
     /**
      * @return int the number of requests expired (or, on a dry run, due)
@@ -29,11 +33,9 @@ final readonly class ExpireDueRequests
             ->chunkById(max(1, $chunk), function (Collection $requests) use ($dryRun, &$count): void {
                 foreach ($requests as $request) {
                     /** @var Request $request */
-                    if (! $dryRun) {
-                        $this->expire->execute($request);
+                    if ($dryRun || $this->expire->execute($request)) {
+                        $count++;
                     }
-
-                    $count++;
                 }
             });
 

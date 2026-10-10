@@ -8,14 +8,10 @@ use Illuminate\Database\Eloquent\Model;
 use RoundlyConsulting\Approvals\Enums\ApprovalStatus;
 use RoundlyConsulting\Approvals\Events\ApprovalRequestResolved;
 use RoundlyConsulting\Approvals\Models\ApprovalRequest;
-use RoundlyConsulting\PackageToolkit\Support\Config;
 use RoundlyConsulting\Requests\Enums\Status;
-use RoundlyConsulting\Requests\Events\RequestCancelled;
-use RoundlyConsulting\Requests\Events\RequestExpired;
-use RoundlyConsulting\Requests\Events\RequestRejected;
-use RoundlyConsulting\Requests\Events\RequestStatusChanged;
 use RoundlyConsulting\Requests\Models\Request;
 use RoundlyConsulting\Requests\Support\StatusGuard;
+use RoundlyConsulting\Requests\Support\StatusWriter;
 
 /**
  * Mirrors an approval request's resolution onto the requests Status of its subject,
@@ -42,35 +38,20 @@ final class SyncRequestStatusFromApproval
             return;
         }
 
-        // A cancelled or expired request stays closed, even when a round it no longer
-        // follows resolves late (the transition guard is off by default).
-        if ($this->guard->closes($subject->status, $target)) {
+        $writer = new StatusWriter($this->guard);
+
+        // Checked and written on the request's locked row, not the copy just loaded: a
+        // cancel or expiry that landed since stays — a cancelled or expired request stays
+        // closed even when a round it no longer follows resolves late, whatever the
+        // transition guard says — and a move the enforced guard forbids is skipped.
+        if (! $writer->move($subject, $target, strict: false)) {
             return;
         }
 
-        if ($this->enforcing() && ! $this->guard->allows($subject->status, $target)) {
-            return;
-        }
-
-        $subject->update(['status' => $target]);
-
-        event(new RequestStatusChanged($subject));
-
-        match ($target) {
-            Status::Rejected => $this->announceRejection($subject, $approvalRequest),
-            Status::Expired => event(new RequestExpired($subject)),
-            Status::Cancelled => event(new RequestCancelled($subject)),
-            default => null,
-        };
-    }
-
-    private function announceRejection(Request $subject, ApprovalRequest $approvalRequest): void
-    {
-        $actor = $this->rejectingActor($approvalRequest);
-
-        if ($actor !== null) {
-            event(new RequestRejected($subject, $actor));
-        }
+        $writer->announce(
+            $subject,
+            rejectedBy: $target === Status::Rejected ? $this->rejectingActor($approvalRequest) : null,
+        );
     }
 
     private function map(ApprovalStatus $status): ?Status
@@ -94,10 +75,5 @@ final class SyncRequestStatusFromApproval
         $actor = $decision?->actor;
 
         return $actor instanceof Model ? $actor : null;
-    }
-
-    private function enforcing(): bool
-    {
-        return Config::boolean('requests.enforce_transitions');
     }
 }

@@ -5,12 +5,14 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\Approvals\Enums\ApprovalRule;
 use RoundlyConsulting\Approvals\Enums\ApprovalStatus;
+use RoundlyConsulting\Approvals\Events\ApprovalApproved;
 use RoundlyConsulting\Approvals\Events\ApprovalRequestResolved;
 use RoundlyConsulting\Approvals\Facades\Approvals;
 use RoundlyConsulting\Approvals\Models\ApprovalRequest;
 use RoundlyConsulting\Requests\Enums\Status;
 use RoundlyConsulting\Requests\Events\RequestCancelled;
 use RoundlyConsulting\Requests\Events\RequestExpired;
+use RoundlyConsulting\Requests\Events\RequestStatusChanged;
 use RoundlyConsulting\Requests\Facades\Requests;
 use RoundlyConsulting\Requests\Models\Request;
 use RoundlyConsulting\Requests\Tests\User;
@@ -117,4 +119,41 @@ it('expires the request when its approval round lapses in the engine', function 
 
     expect($request->fresh()?->status)->toBe(Status::Expired);
     Event::assertDispatched(fn (RequestExpired $e): bool => $e->request->is($request));
+});
+
+/**
+ * C-5: the listener read the request, checked it, then wrote unconditionally outside any
+ * transaction. A cancel landing between its read and its write was overwritten: the
+ * request ended Approved although RequestCancelled had fired.
+ */
+it('never overwrites a cancel that lands between its read and its write', function (): void {
+    $alice = User::create();
+    $request = Requests::make()->requireApprovalsFrom([$alice])->create();
+
+    $armed = false;
+    $statuses = [];
+
+    Event::listen(ApprovalApproved::class, function () use (&$armed): void {
+        $armed = true;
+    });
+
+    // Fires as the listener loads the round's subject: cancel right behind its read.
+    Request::retrieved(function (Request $retrieved) use (&$armed, $request): void {
+        if (! $armed || ! $retrieved->is($request)) {
+            return;
+        }
+
+        $armed = false;
+
+        Requests::cancel(Request::query()->findOrFail($retrieved->getKey()));
+    });
+
+    Event::listen(RequestStatusChanged::class, function (RequestStatusChanged $event) use (&$statuses): void {
+        $statuses[] = $event->request->status;
+    });
+
+    Requests::approve($request, $alice);
+
+    expect($request->fresh()?->status)->toBe(Status::Cancelled)
+        ->and($statuses)->toBe([Status::Cancelled]);
 });

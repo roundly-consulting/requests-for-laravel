@@ -16,6 +16,17 @@ All notable changes to `requests-for-laravel` are documented in this file. The f
 - `Requests::reopen()` announces only what it changed: `RequestStatusChanged` only when the status
   moved, and `ApprovalRevoked` only when a decision was withdrawn or the request was reopened.
   Reopening a `New` request the actor never decided fires neither. **Behaviour change.**
+- Status writes no longer trust a stale copy of the request. `cancel()`, `expire()`, `reopen()`,
+  `approve()` / `reject()` on a request without approvers, and the approval-sync listener re-read
+  the request's row under a lock (`lockForUpdate()`) and check it there. A copy loaded before a
+  concurrent decision, cancel or sweep can no longer overwrite the newer status (for example
+  expire an approved request, or approve, reopen or un-cancel a cancelled one). Events fire only
+  when the status really changed, so repeating a no-approver request's current outcome no longer
+  re-fires `RequestStatusChanged` / `RequestRejected`. **Behaviour change.**
+- `Requests::expireDue()` and `requests:expire` expire a request only if it is still open and
+  past due when its turn comes. A request decided, cancelled or expired by an overlapping sweep
+  after its chunk was read is left alone and not counted, so overlapping sweeps announce each
+  request once.
 
 ### Security
 

@@ -295,3 +295,17 @@ it('checks the configured authorization ability on reopen', function (): void {
     expect(fn () => Requests::reopen($request, $alice))->toThrow(UnauthorizedApprovalException::class)
         ->and($request->fresh()?->status)->toBe(Status::Approved);
 });
+
+it('falls back to the decide-approval ability when none is configured', function (): void {
+    $alice = User::create();
+
+    $request = Requests::make()->requireApprovalsFrom([$alice])->create();
+    Requests::approve($request, $alice);
+
+    config()->set('approvals.authorization.enabled', true);
+    config()->set('approvals.authorization.ability', ' ');
+    Gate::define('decide-approval', fn (): bool => false);
+
+    expect(fn () => Requests::reopen($request, $alice))->toThrow(UnauthorizedApprovalException::class)
+        ->and($request->fresh()?->status)->toBe(Status::Approved);
+});

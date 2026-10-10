@@ -13,12 +13,12 @@ use RoundlyConsulting\PackageToolkit\Support\Config;
 use RoundlyConsulting\Requests\Enums\Status;
 use RoundlyConsulting\Requests\Events\ApprovalRecorded;
 use RoundlyConsulting\Requests\Events\ApprovalRevoked;
-use RoundlyConsulting\Requests\Events\RequestRejected;
 use RoundlyConsulting\Requests\Events\RequestStatusChanged;
 use RoundlyConsulting\Requests\Exceptions\RequestAlreadyResolved;
 use RoundlyConsulting\Requests\Models\Request;
 use RoundlyConsulting\Requests\Support\DecisionGate;
 use RoundlyConsulting\Requests\Support\StatusGuard;
+use RoundlyConsulting\Requests\Support\StatusWriter;
 
 /**
  * Records an actor's decision through the approvals engine. When the request has an
@@ -67,15 +67,21 @@ final class ResolveRequest
 
     private function approve(Request $request, Model&GivesApprovalsInterface $actor, ?string $reason): Request
     {
-        $hasApprovalRequest = $this->hasOpenRound($request);
+        if (! $this->hasOpenRound($request)) {
+            $approved = $this->decideAlone($request, $actor, $reason, Status::Approved);
+
+            event(new ApprovalRecorded($request, $actor));
+
+            if ($approved) {
+                $this->writer()->announce($request);
+            }
+
+            return $request;
+        }
 
         $this->decide($request, $actor, $reason)->approve();
 
         event(new ApprovalRecorded($request, $actor));
-
-        if (! $hasApprovalRequest) {
-            return $this->updateRequestStatus($request, Status::Approved);
-        }
 
         // The engine resolved (or held) the request; the sync listener owns the status.
         return $request->refresh();
@@ -83,29 +89,55 @@ final class ResolveRequest
 
     private function reject(Request $request, Model&GivesApprovalsInterface $actor, ?string $reason): Request
     {
-        $hasApprovalRequest = $this->hasOpenRound($request);
-
-        $this->decide($request, $actor, $reason)->reject();
-
-        if (! $hasApprovalRequest) {
+        if (! $this->hasOpenRound($request)) {
             // Written first, as the sync listener does, so RequestRejected's listeners
             // see the rejection they are told about.
-            $this->updateRequestStatus($request, Status::Rejected);
-
-            event(new RequestRejected($request, $actor));
+            if ($this->decideAlone($request, $actor, $reason, Status::Rejected)) {
+                $this->writer()->announce($request, rejectedBy: $actor);
+            }
 
             return $request;
         }
 
+        $this->decide($request, $actor, $reason)->reject();
+
         return $request->refresh();
+    }
+
+    /**
+     * Decide a request that has no approval round: the decision resolves it at once. The
+     * request's row is locked first and the checks run on the status it holds, so a copy
+     * loaded before a cancel (or another decision) can neither record a decision nor move
+     * the status. Repeating the request's current outcome records the decision and moves
+     * nothing.
+     *
+     * @return bool whether the status changed
+     */
+    private function decideAlone(Request $request, Model $actor, ?string $reason, Status $to): bool
+    {
+        $writer = $this->writer();
+
+        return $writer->locked($request, function (Status $from) use ($writer, $request, $actor, $reason, $to): bool {
+            $moves = $writer->permits($from, $to);
+
+            $decision = $this->decide($request, $actor, $reason);
+            $to === Status::Approved ? $decision->approve() : $decision->reject();
+
+            if ($moves) {
+                $writer->write($request, $to);
+            }
+
+            return $moves;
+        });
     }
 
     /**
      * Move the request back to New. While its decisions still count (no approval round,
      * or a round still open) the actor's decision is withdrawn; once the round is over the
      * engine refuses that withdrawal, and a fresh round opens instead so the request can
-     * be decided again — all as one unit, so a round that cannot reopen leaves the
-     * request as it was.
+     * be decided again — all as one unit, under a lock on the request's row, so a round
+     * that cannot reopen leaves the request as it was and a stale copy cannot reopen a
+     * request closed since it was loaded.
      */
     private function reopen(Request $request, Model&GivesApprovalsInterface $actor, ?string $reason): Request
     {
@@ -113,21 +145,25 @@ final class ResolveRequest
         // is otherwise reached only through the withdrawal below — skipped on a closed round.
         $this->gate->authorize($actor, $request);
 
-        $from = $request->status;
+        $writer = $this->writer();
         $withdrawn = null;
         $round = null;
 
-        $request->getConnection()->transaction(function () use ($request, $actor, $reason, &$withdrawn, &$round): void {
+        $statusChanged = $writer->locked($request, function (Status $from) use ($writer, $request, $actor, $reason, &$withdrawn, &$round): bool {
+            $moves = $writer->permits($from, Status::New);
+
             if ($this->acceptsDecisions($request)) {
                 $withdrawn = $actor->cancelApproval($request, $reason);
             }
 
-            $request->update(['status' => Status::New]);
+            if ($moves) {
+                $writer->write($request, Status::New);
+            }
 
             $round = $this->restart->execute($request);
-        });
 
-        $statusChanged = $from !== Status::New;
+            return $moves;
+        });
 
         // ApprovalRevoked is the reopen signal: the actor's decision was withdrawn, or the
         // request was moved back to New (a finished round's decisions stay where they
@@ -189,14 +225,8 @@ final class ResolveRequest
         return Config::boolean('requests.enforce_transitions');
     }
 
-    private function updateRequestStatus(Request $request, Status $status): Request
+    private function writer(): StatusWriter
     {
-        $request->update([
-            'status' => $status,
-        ]);
-
-        event(new RequestStatusChanged($request));
-
-        return $request;
+        return new StatusWriter($this->guard);
     }
 }
