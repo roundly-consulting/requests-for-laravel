@@ -54,6 +54,16 @@ class RequestManager
         return $this->container->make(ResolveRequest::class)->execute($request, $actor, Status::Rejected, $reason);
     }
 
+    /**
+     * Move a decided (or expired) request back to New so it can be decided again; a
+     * finished approval round is replaced by a fresh one with the same approvers.
+     *
+     * Reopening is a lifecycle move, like cancel() and expire(): the package does not
+     * require the actor to be one of the round's approvers, so authorize who may reopen in
+     * your app. When `approvals.authorization.enabled` is on, the approvals gate is asked.
+     * The actor's own live decision is withdrawn, and the actor is the one ApprovalRevoked
+     * names — the reopen signal.
+     */
     public function reopen(Request $request, Model&GivesApprovalsInterface $actor, ?string $reason = null): Request
     {
         return $this->container->make(ResolveRequest::class)->execute($request, $actor, Status::New, $reason);

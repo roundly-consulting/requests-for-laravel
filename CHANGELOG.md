@@ -20,6 +20,9 @@ All notable changes to `requests-for-laravel` are documented in this file. The f
 
 - Requires `roundly-consulting/approvals-for-laravel` `^1.1` (was `^1.0`), for its public round
   close.
+- Documentation: `Requests::reopen()` is a lifecycle move like `cancel()` and `expire()`. It does
+  not require the actor to be one of the round's approvers, so the host authorizes who may reopen.
+  `ApprovalRevoked` is the reopen signal.
 
 ### Fixed
 
