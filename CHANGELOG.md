@@ -13,6 +13,9 @@ All notable changes to `requests-for-laravel` are documented in this file. The f
 - Rejecting a request without approvers writes `Rejected` before `RequestRejected` fires, so its
   listeners see the rejection (`RequestStatusChanged` now comes first, as on the approval-round
   path).
+- `Requests::reopen()` announces only what it changed: `RequestStatusChanged` only when the status
+  moved, and `ApprovalRevoked` only when a decision was withdrawn or the request was reopened.
+  Reopening a `New` request the actor never decided fires neither. **Behaviour change.**
 
 ## 1.0.1 - 2026-10-04
 

@@ -2,11 +2,14 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\Approvals\DataTransferObjects\StageDefinition;
 use RoundlyConsulting\Approvals\Enums\ApprovalRule;
 use RoundlyConsulting\Approvals\Enums\ApprovalStatus;
 use RoundlyConsulting\Approvals\Exceptions\UnauthorizedApprovalException;
 use RoundlyConsulting\Requests\Enums\Status;
+use RoundlyConsulting\Requests\Events\ApprovalRevoked;
+use RoundlyConsulting\Requests\Events\RequestStatusChanged;
 use RoundlyConsulting\Requests\Exceptions\InvalidApprover;
 use RoundlyConsulting\Requests\Facades\Requests;
 use RoundlyConsulting\Requests\Tests\User;
@@ -188,4 +191,61 @@ it('refuses to reopen when a declared approver no longer exists', function (): v
     expect($request->fresh()?->status)->toBe(Status::Approved)
         ->and($request->approvalRequests()->count())->toBe(1)
         ->and($alice->hasApproved($request))->toBeTrue();
+});
+
+/**
+ * C-11: reopen fired ApprovalRevoked and RequestStatusChanged whatever happened. Reopening
+ * a New request the actor never decided changes nothing, so it announces nothing — as
+ * cancelling a cancelled request and expiring an expired one already do.
+ */
+it('announces nothing when reopening a new request the actor never decided', function (): void {
+    $alice = User::create();
+    $bob = User::create();
+
+    $request = Requests::make()->requireApprovalsFrom([$alice, $bob])->create();
+
+    Event::fake([ApprovalRevoked::class, RequestStatusChanged::class]);
+
+    Requests::reopen($request, $alice);
+
+    expect($request->fresh()?->status)->toBe(Status::New);
+    Event::assertNotDispatched(ApprovalRevoked::class);
+    Event::assertNotDispatched(RequestStatusChanged::class);
+});
+
+it('announces a withdrawal on an open round without a status change', function (): void {
+    $alice = User::create();
+    $bob = User::create();
+
+    $request = Requests::make()->requireApprovalsFrom([$alice, $bob])->create();
+    Requests::approve($request, $alice);
+
+    Event::fake([ApprovalRevoked::class, RequestStatusChanged::class]);
+
+    Requests::reopen($request, $alice);
+
+    Event::assertDispatchedTimes(ApprovalRevoked::class, 1);
+    Event::assertNotDispatched(RequestStatusChanged::class);
+});
+
+/**
+ * The closed-round half (owner, 2026-10-10): ApprovalRevoked stays — it is the reopened
+ * signal, though the finished round's decisions are not withdrawn — and the status change
+ * is announced once.
+ */
+it('announces a reopen after a closed round once', function (): void {
+    $alice = User::create();
+    $bob = User::create();
+
+    $request = Requests::make()->requireApprovalsFrom([$alice, $bob])->create();
+    Requests::approve($request, $alice);
+    Requests::approve($request, $bob);
+
+    Event::fake([ApprovalRevoked::class, RequestStatusChanged::class]);
+
+    Requests::reopen($request, $alice);
+
+    Event::assertDispatchedTimes(ApprovalRevoked::class, 1);
+    Event::assertDispatchedTimes(RequestStatusChanged::class, 1);
+    Event::assertDispatched(fn (RequestStatusChanged $e): bool => $e->request->status === Status::New);
 });

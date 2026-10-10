@@ -107,18 +107,32 @@ final class ResolveRequest
      */
     private function reopen(Request $request, Model&GivesApprovalsInterface $actor, ?string $reason): Request
     {
-        $request->getConnection()->transaction(function () use ($request, $actor, $reason): void {
+        $from = $request->status;
+        $withdrawn = null;
+        $round = null;
+
+        $request->getConnection()->transaction(function () use ($request, $actor, $reason, &$withdrawn, &$round): void {
             if ($this->acceptsDecisions($request)) {
-                $actor->cancelApproval($request, $reason);
+                $withdrawn = $actor->cancelApproval($request, $reason);
             }
 
             $request->update(['status' => Status::New]);
 
-            $this->restart->execute($request);
+            $round = $this->restart->execute($request);
         });
 
-        event(new ApprovalRevoked($request, $actor));
-        event(new RequestStatusChanged($request));
+        $statusChanged = $from !== Status::New;
+
+        // ApprovalRevoked is the reopen signal: the actor's decision was withdrawn, or the
+        // request was moved back to New (a finished round's decisions stay where they
+        // are). A reopen that changed nothing announces nothing.
+        if ($withdrawn !== null || $statusChanged || $round !== null) {
+            event(new ApprovalRevoked($request, $actor));
+        }
+
+        if ($statusChanged) {
+            event(new RequestStatusChanged($request));
+        }
 
         return $request;
     }
