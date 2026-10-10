@@ -17,6 +17,7 @@ use RoundlyConsulting\Requests\Events\RequestRejected;
 use RoundlyConsulting\Requests\Events\RequestStatusChanged;
 use RoundlyConsulting\Requests\Exceptions\RequestAlreadyResolved;
 use RoundlyConsulting\Requests\Models\Request;
+use RoundlyConsulting\Requests\Support\DecisionGate;
 use RoundlyConsulting\Requests\Support\StatusGuard;
 
 /**
@@ -32,6 +33,7 @@ final class ResolveRequest
         private readonly RestartApprovalRound $restart = new RestartApprovalRound,
         private readonly CancelRequest $cancel = new CancelRequest,
         private readonly ExpireRequest $expire = new ExpireRequest,
+        private readonly DecisionGate $gate = new DecisionGate,
     ) {}
 
     public function execute(
@@ -107,6 +109,10 @@ final class ResolveRequest
      */
     private function reopen(Request $request, Model&GivesApprovalsInterface $actor, ?string $reason): Request
     {
+        // Reopening changes the outcome as much as a decision does, and the engine's gate
+        // is otherwise reached only through the withdrawal below — skipped on a closed round.
+        $this->gate->authorize($actor, $request);
+
         $from = $request->status;
         $withdrawn = null;
         $round = null;

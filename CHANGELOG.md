@@ -17,6 +17,14 @@ All notable changes to `requests-for-laravel` are documented in this file. The f
   moved, and `ApprovalRevoked` only when a decision was withdrawn or the request was reopened.
   Reopening a `New` request the actor never decided fires neither. **Behaviour change.**
 
+### Security
+
+- `Requests::reopen()` asks the approvals authorization gate (`approvals.authorization.enabled` /
+  `ability`) whatever state the approval round is in. An actor the gate denies could reopen an
+  approved or rejected request, because the gate was reached only through the withdrawal, which
+  is skipped once the round is over. Now they get `UnauthorizedApprovalException` and nothing
+  changes. **Behaviour change.**
+
 ## 1.0.1 - 2026-10-04
 
 ### Changed

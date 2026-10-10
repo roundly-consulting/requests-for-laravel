@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 use RoundlyConsulting\Approvals\DataTransferObjects\StageDefinition;
 use RoundlyConsulting\Approvals\Enums\ApprovalRule;
 use RoundlyConsulting\Approvals\Enums\ApprovalStatus;
@@ -248,4 +250,48 @@ it('announces a reopen after a closed round once', function (): void {
     Event::assertDispatchedTimes(ApprovalRevoked::class, 1);
     Event::assertDispatchedTimes(RequestStatusChanged::class, 1);
     Event::assertDispatched(fn (RequestStatusChanged $e): bool => $e->request->status === Status::New);
+});
+
+/**
+ * C-6: reopen reached the approvals authorization gate only through the withdrawal, which
+ * it skips once the round is over — so a denied actor could reopen a decided request
+ * although the same call on an open round was refused.
+ */
+it('refuses to reopen a decided request for an actor the authorization gate denies', function (): void {
+    $alice = User::create();
+    $mallory = User::create();
+
+    config()->set('approvals.authorization.enabled', true);
+    Gate::define('decide-approval', fn (Model $actor): bool => ! $actor->is($mallory));
+
+    $request = Requests::make()->requireApprovalsFrom([$alice])->create();
+    Requests::reject($request, $alice);
+
+    Event::fake([ApprovalRevoked::class]);
+
+    expect(fn () => Requests::reopen($request, $mallory))->toThrow(UnauthorizedApprovalException::class)
+        ->and($request->fresh()?->status)->toBe(Status::Rejected)
+        ->and($request->approvalRequests()->count())->toBe(1);
+
+    Event::assertNotDispatched(ApprovalRevoked::class);
+
+    Requests::reopen($request, $alice);
+
+    expect($request->fresh()?->status)->toBe(Status::New)
+        ->and($request->approvalRequests()->count())->toBe(2);
+});
+
+it('checks the configured authorization ability on reopen', function (): void {
+    $alice = User::create();
+
+    $request = Requests::make()->requireApprovalsFrom([$alice])->create();
+    Requests::approve($request, $alice);
+
+    config()->set('approvals.authorization.enabled', true);
+    config()->set('approvals.authorization.ability', 'reopen-request');
+    Gate::define('decide-approval', fn (): bool => true);
+    Gate::define('reopen-request', fn (): bool => false);
+
+    expect(fn () => Requests::reopen($request, $alice))->toThrow(UnauthorizedApprovalException::class)
+        ->and($request->fresh()?->status)->toBe(Status::Approved);
 });
