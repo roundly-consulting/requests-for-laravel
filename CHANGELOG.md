@@ -26,6 +26,11 @@ All notable changes to `requests-for-laravel` are documented in this file. The f
   decided before the deadline went by) no longer brings it back already overdue, to be expired
   again by the next sweep. Its deadline restarts at `requests.default_ttl` from now when that is
   set, and is cleared otherwise. A deadline still in the future is kept. **Behaviour change.**
+- `Requests::fake()`'s `create()` returns the configured `requests.model` (not always the packaged
+  `Request`), with the author, `meta`, declared approvers' keys and default-TTL `expires_at` set
+  exactly as the real create sets them, still unsaved. Host code typed against its own request
+  model no longer throws a `TypeError` under the fake only. A bare-id approver is refused with
+  `InvalidApprover`, as in the real create.
 - Status writes no longer trust a stale copy of the request. `cancel()`, `expire()`, `reopen()`,
   `approve()` / `reject()` on a request without approvers, and the approval-sync listener re-read
   the request's row under a lock (`lockForUpdate()`) and check it there. A copy loaded before a

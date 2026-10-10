@@ -8,8 +8,10 @@ use Illuminate\Database\Eloquent\Model;
 use PHPUnit\Framework\Assert;
 use RoundlyConsulting\Approvals\Interfaces\GivesApprovalsInterface;
 use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
+use RoundlyConsulting\Requests\Exceptions\InvalidApprover;
 use RoundlyConsulting\Requests\Models\Request;
 use RoundlyConsulting\Requests\RequestManager;
+use RoundlyConsulting\Requests\Support\RequestDraft;
 
 /**
  * Recording test double for the requests manager. `Requests::fake()` swaps it in
@@ -41,22 +43,17 @@ final class RequestsFake extends RequestManager
     private array $expiredDue = [];
 
     /**
-     * Records the request and returns an unsaved model built from the DTO.
+     * Records the request and returns it unsaved: the configured `requests.model`, built from
+     * the DTO exactly as the real create builds it (author, meta, declared approvers, the
+     * default-TTL expiry), so host code typed against its own model runs under the fake too.
+     *
+     * @throws InvalidApprover when an approver is not a model (a bare id), as the real create
      */
     public function create(CreateRequestDto $dto): Request
     {
         $this->created[] = $dto;
 
-        $model = new Request;
-        $model->forceFill([
-            'status' => $dto->status,
-            'type' => $dto->type,
-            'title' => $dto->title,
-            'description' => $dto->description,
-            'expires_at' => $dto->expiresAt,
-        ]);
-
-        return $model;
+        return RequestDraft::from($dto);
     }
 
     public function approve(Request $request, Model&GivesApprovalsInterface $actor, ?string $reason = null): Request

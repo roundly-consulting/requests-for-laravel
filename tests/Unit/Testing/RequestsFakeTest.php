@@ -5,6 +5,7 @@ declare(strict_types=1);
 use PHPUnit\Framework\AssertionFailedError;
 use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
 use RoundlyConsulting\Requests\Enums\Status;
+use RoundlyConsulting\Requests\Exceptions\InvalidApprover;
 use RoundlyConsulting\Requests\Facades\Requests;
 use RoundlyConsulting\Requests\Models\Request;
 use RoundlyConsulting\Requests\RequestManager;
@@ -213,4 +214,13 @@ it('answers canTransition for real', function (): void {
 it('builds a fresh fake from the container on every call', function (): void {
     expect(Requests::fake())->not->toBe(Requests::fake())
         ->and(Requests::fake())->toBeInstanceOf(RequestsFake::class);
+});
+
+it('refuses a bare-id approver under the fake, as the real create does', function (): void {
+    $fake = Requests::fake();
+
+    expect(fn () => Requests::create(new CreateRequestDto(approvers: [42])))
+        ->toThrow(InvalidApprover::class);
+
+    $fake->assertCreated(1);
 });

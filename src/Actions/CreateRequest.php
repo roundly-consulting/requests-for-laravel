@@ -4,17 +4,13 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Requests\Actions;
 
-use Carbon\CarbonInterface;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Carbon;
 use RoundlyConsulting\Approvals\Builders\PendingApprovalRequest;
 use RoundlyConsulting\Approvals\Facades\Approvals;
 use RoundlyConsulting\Requests\DataTransferObjects\CreateRequestDto;
 use RoundlyConsulting\Requests\Events\RequestCreated;
 use RoundlyConsulting\Requests\Exceptions\InvalidApprover;
 use RoundlyConsulting\Requests\Models\Request;
-use RoundlyConsulting\Requests\Support\DefaultTtl;
-use RoundlyConsulting\Requests\Support\RequestModel;
+use RoundlyConsulting\Requests\Support\RequestDraft;
 
 final class CreateRequest
 {
@@ -23,25 +19,7 @@ final class CreateRequest
      */
     public function execute(CreateRequestDto $dto): Request
     {
-        $this->assertModels($dto->approvers);
-
-        foreach ($dto->stageApprovers as $group) {
-            $this->assertModels($group);
-        }
-
-        $request = $this->newModelInstance([
-            'status' => $dto->status,
-            'type' => $dto->type,
-            'title' => $dto->title,
-            'description' => $dto->description,
-            'meta' => $dto->meta,
-            'require_approvals_from' => $this->approverKeys($dto->approvers),
-            'expires_at' => $dto->expiresAt ?? $this->defaultExpiry(),
-        ]);
-
-        if ($dto->author !== null) {
-            $request->author()->associate($dto->author);
-        }
+        $request = RequestDraft::from($dto);
 
         // One unit: a request whose approval round failed to open (an unsaved approver,
         // an unknown preset) must not survive as a request anyone could resolve alone.
@@ -103,65 +81,5 @@ final class CreateRequest
     private function expiringWith(Request $request, PendingApprovalRequest $round): PendingApprovalRequest
     {
         return $request->expires_at === null ? $round : $round->expiringAt($request->expires_at);
-    }
-
-    /**
-     * Refuse anything but a model among the approvers before anything is written: a bare
-     * id names no model type, so the round could never enforce it.
-     *
-     * @param  array<array-key, mixed>  $approvers
-     *
-     * @throws InvalidApprover
-     */
-    private function assertModels(array $approvers): void
-    {
-        foreach ($approvers as $approver) {
-            if (! $approver instanceof Model) {
-                throw InvalidApprover::notAModel($approver);
-            }
-        }
-    }
-
-    /**
-     * The declared approvers' keys, each approver once, stored on the request.
-     *
-     * @param  list<Model>  $approvers
-     * @return list<mixed>|null
-     */
-    private function approverKeys(array $approvers): ?array
-    {
-        $unique = [];
-
-        foreach ($approvers as $approver) {
-            foreach ($unique as $seen) {
-                if ($seen->getMorphClass() === $approver->getMorphClass()
-                    && (string) $seen->getKey() === (string) $approver->getKey()) {
-                    continue 2;
-                }
-            }
-
-            $unique[] = $approver;
-        }
-
-        return $unique === []
-            ? null
-            : array_map(static fn (Model $approver): mixed => $approver->getKey(), $unique);
-    }
-
-    private function defaultExpiry(): ?CarbonInterface
-    {
-        $ttl = DefaultTtl::minutes();
-
-        return $ttl === null ? null : Carbon::now()->addMinutes($ttl);
-    }
-
-    /**
-     * @param  array<string, mixed>  $attributes
-     */
-    private function newModelInstance(array $attributes): Request
-    {
-        $model = RequestModel::class();
-
-        return new $model($attributes);
     }
 }
