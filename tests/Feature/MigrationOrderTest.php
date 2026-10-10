@@ -50,19 +50,24 @@ it('publishes every migration timestamp-injected into the host', function (): vo
  */
 
 /**
- * R — the real-engine proof. `migrations: 1` pins the count, and the expectation
- * additionally fails a set that "applies cleanly" while creating no tables — an empty
- * `up()` otherwise passes and proves nothing.
+ * R — the real-engine proof, on both engines the package supports. `migrations: 1` pins
+ * the count, and the expectation additionally fails a set that "applies cleanly" while
+ * creating no tables — an empty `up()` otherwise passes and proves nothing. Each case runs
+ * on its own engine's leg and skips visibly on every other.
  *
  * The negative control (`toRejectBrokenOrderOnConnection`) is deliberately NOT adopted: it
  * asserts the engine *refuses* a reordered set, and with a single migration the reversed
- * list is the same list — and with zero foreign keys Postgres has nothing to refuse
+ * list is the same list — and with zero foreign keys neither engine has anything to refuse
  * regardless, so it would fail loudly by design. That is the assertion working correctly
  * against a shape it does not fit, not a red to chase (credits, tested not assumed).
  */
 it('applies its migrations on postgres', function () use ($migrations): void {
     expect($migrations)->toApplyOnConnection('pgsql', migrations: 1);
 })->skip(fn (): bool => ! test()->connectionAvailable('pgsql'), 'no postgres connection available');
+
+it('applies its migrations on mysql', function () use ($migrations): void {
+    expect($migrations)->toApplyOnConnection('mysql', migrations: 1);
+})->skip(fn (): bool => ! test()->connectionAvailable('mysql'), 'no mysql connection available');
 
 /**
  * The driver-truth pin. It compares the driver the leg *declares* (TESTING_DB_DRIVER)
