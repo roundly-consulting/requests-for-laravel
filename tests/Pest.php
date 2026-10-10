@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use RoundlyConsulting\Requests\Tests\Fixtures\SwappedRequestTestCase;
+use RoundlyConsulting\Requests\Tests\Fixtures\UlidKeyTestCase;
+use RoundlyConsulting\Requests\Tests\Fixtures\UuidKeyTestCase;
 use RoundlyConsulting\Requests\Tests\TestCase;
 
 // Explicit paths, not the previous blanket `->in(__DIR__)`: the ModelSwap directory below
@@ -18,3 +20,8 @@ uses(TestCase::class)->in('ArchTest.php', 'Feature', 'Unit');
 // The model-swap proof needs `requests.model` pointed at the host subclass BEFORE the
 // providers boot, so it runs on its own base case in its own directory.
 uses(SwappedRequestTestCase::class)->in('ModelSwap');
+
+// The key-type legs: the migrations read the key types to pick their columns, so each
+// non-default leg needs them set before the providers boot — a base case per key type.
+uses(UuidKeyTestCase::class)->in('KeyTypes/UuidKeyTest.php');
+uses(UlidKeyTestCase::class)->in('KeyTypes/UlidKeyTest.php');

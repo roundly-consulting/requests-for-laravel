@@ -36,7 +36,8 @@ php artisan migrate
 ```
 
 If the models that author requests have UUID/ULID keys, set `REQUESTS_KEY_TYPE` **before**
-migrating.
+migrating. If your approvers do (`APPROVALS_KEY_TYPE`), set `REQUESTS_PRIMARY_KEY_TYPE` to the
+same value, also before migrating.
 
 ## Usage
 

@@ -6,6 +6,16 @@ All notable changes to `requests-for-laravel` are documented in this file. The f
 
 ## Unreleased
 
+### Added
+
+- `requests.primary_key_type` (env `REQUESTS_PRIMARY_KEY_TYPE`): the requests table's own id can
+  be `bigint` (the default, unchanged), `uuid` or `ulid`. With `uuid` / `ulid` the ids are
+  generated when a request is created. Set it to the same value as `APPROVALS_KEY_TYPE` before
+  migrating. The approvals engine's `subject` / `approvable` columns point at this id, so with
+  UUID- or ULID-keyed approvers a bigint request id could not be stored on PostgreSQL: creating a
+  request with approvers, or deciding one, failed with `invalid input syntax for type uuid`.
+  Existing installs keep their table; the option only applies when the migration first runs.
+
 ### Changed
 
 - Requires `roundly-consulting/approvals-for-laravel` `^1.1` (was `^1.0`), for its public round

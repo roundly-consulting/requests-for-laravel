@@ -13,11 +13,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Collection;
 use RoundlyConsulting\Approvals\Interfaces\RequiresApprovalInterface;
 use RoundlyConsulting\Approvals\Traits\RequiresApproval;
+use RoundlyConsulting\Requests\Concerns\HasConfigurableKey;
 use RoundlyConsulting\Requests\Database\Factories\RequestFactory;
 use RoundlyConsulting\Requests\Enums\Status;
 
 /**
- * @property int $id
+ * @property int|string $id
  * @property Status $status
  * @property string|null $author_type
  * @property int|string|null $author_id
@@ -43,6 +44,9 @@ use RoundlyConsulting\Requests\Enums\Status;
  */
 class Request extends Model implements RequiresApprovalInterface
 {
+    /** A bigint, uuid or ulid id, per `requests.primary_key_type`. */
+    use HasConfigurableKey;
+
     /** @use HasFactory<RequestFactory> */
     use HasFactory;
 

@@ -12,10 +12,18 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // The requests' own id, which the approvals engine's subject / approvable morph
+        // columns point at, and the author morph's key type — two separate axes.
+        $primaryKeyType = KeyType::fromConfig('requests.primary_key_type');
         $keyType = KeyType::fromConfig('requests.key_type');
 
-        Schema::create('requests', function (Blueprint $table) use ($keyType): void {
-            $table->id();
+        Schema::create('requests', function (Blueprint $table) use ($primaryKeyType, $keyType): void {
+            match ($primaryKeyType) {
+                KeyType::BigInt => $table->id(),
+                KeyType::Uuid => $table->uuid('id')->primary(),
+                KeyType::Ulid => $table->ulid('id')->primary(),
+            };
+
             $table->string('status', 16)->default(Status::New->value);
             $table->morphKey('author', $keyType, nullable: true);
             $table->string('type')->nullable();

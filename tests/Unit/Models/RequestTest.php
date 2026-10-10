@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Collection;
+use RoundlyConsulting\PackageToolkit\Exceptions\InvalidConfigurationException;
 use RoundlyConsulting\Requests\Database\Factories\RequestFactory;
 use RoundlyConsulting\Requests\Enums\Status;
 use RoundlyConsulting\Requests\Facades\Requests;
@@ -56,4 +57,19 @@ it('starts a raw-created request as New in memory', function (): void {
     Requests::approve($request, User::create());
 
     expect($request->fresh()?->status)->toBe(Status::Approved);
+});
+
+it('keys requests with auto-incrementing bigints by default', function (): void {
+    $request = Request::factory()->create();
+
+    expect($request->getKey())->toBeInt()
+        ->and($request->getKeyType())->toBe('int')
+        ->and($request->getIncrementing())->toBeTrue()
+        ->and($request->usesUniqueIds())->toBeFalse();
+});
+
+it('refuses an unknown primary key type', function (): void {
+    config()->set('requests.primary_key_type', 'uiid');
+
+    expect(fn () => new Request)->toThrow(InvalidConfigurationException::class);
 });

@@ -13,5 +13,14 @@ return new class extends Migration
         Schema::create('users', function (Blueprint $table): void {
             $table->id();
         });
+
+        // Approvers and authors with string keys, for the uuid / ulid key-type legs.
+        Schema::create('uuid_users', function (Blueprint $table): void {
+            $table->uuid('id')->primary();
+        });
+
+        Schema::create('ulid_users', function (Blueprint $table): void {
+            $table->ulid('id')->primary();
+        });
     }
 };

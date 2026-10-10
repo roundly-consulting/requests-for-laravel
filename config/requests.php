@@ -51,6 +51,30 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Primary Key Type
+    |--------------------------------------------------------------------------
+    |
+    | The key type of the requests table's own id: "bigint" (the Laravel
+    | default), "uuid" or "ulid" — uuid/ulid ids are generated when a request
+    | is created. Anything else throws an InvalidConfigurationException.
+    |
+    | The approvals engine's polymorphic columns (a round's subject, a
+    | decision's approvable) point at this id and use approvals.key_type, so
+    | set this to the same value as APPROVALS_KEY_TYPE: with UUID-keyed
+    | approvers (APPROVALS_KEY_TYPE=uuid) a bigint request id cannot be stored
+    | there on PostgreSQL. This is a different axis from "key_type" above (the
+    | key type of the authors a request points at).
+    |
+    | It is fixed when the migration first runs, so choose it before migrating.
+    |
+    | Supported: "bigint", "uuid", "ulid"
+    |
+    */
+
+    'primary_key_type' => env('REQUESTS_PRIMARY_KEY_TYPE', 'bigint'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Enforce status transitions
     |--------------------------------------------------------------------------
     |

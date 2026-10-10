@@ -85,8 +85,10 @@ jobs:
           # Requests ships one CREATE and no foreign keys, so the leg is not here for
           # ordering. It is here for the columns: `meta` and `require_approvals_from`
           # are jsonb, which has no equality operator on sqlite's terms at all, and
-          # `status` is an enum-backed string. Only a real engine proves the shipped
-          # table is usable rather than merely creatable.
+          # `status` is an enum-backed string. The uuid / ulid key-type legs
+          # (tests/KeyTypes) are here too: sqlite's type affinity stores an integer id
+          # in a uuid morph column, Postgres refuses it. Only a real engine proves the
+          # shipped table is usable rather than merely creatable.
           TESTING_DB_DRIVER: pgsql
           TESTING_DB_HOST: 127.0.0.1
           TESTING_DB_PORT: 5432
