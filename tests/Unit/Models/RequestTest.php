@@ -5,7 +5,9 @@ declare(strict_types=1);
 use Illuminate\Support\Collection;
 use RoundlyConsulting\Requests\Database\Factories\RequestFactory;
 use RoundlyConsulting\Requests\Enums\Status;
+use RoundlyConsulting\Requests\Facades\Requests;
 use RoundlyConsulting\Requests\Models\Request;
+use RoundlyConsulting\Requests\Tests\User;
 
 it('returns correct factory', function (): void {
     expect(Request::factory())->toBeInstanceOf(RequestFactory::class);
@@ -38,4 +40,20 @@ it('reports expiry only for open, past-due requests', function (): void {
         ->and($future->isExpired())->toBeFalse()
         ->and($approved->isExpired())->toBeFalse()
         ->and($noDeadline->isExpired())->toBeFalse();
+});
+
+/**
+ * C-12: the `New` default lived only in the column, so a request made with a raw
+ * `create()` held a null status in memory until refreshed — `isExpired()` and
+ * `Requests::approve()` then crashed on it.
+ */
+it('starts a raw-created request as New in memory', function (): void {
+    $request = Request::create(['title' => 'x']);
+
+    expect($request->status)->toBe(Status::New)
+        ->and($request->isExpired())->toBeFalse();
+
+    Requests::approve($request, User::create());
+
+    expect($request->fresh()?->status)->toBe(Status::Approved);
 });

@@ -6,6 +6,11 @@ All notable changes to `requests-for-laravel` are documented in this file. The f
 
 ## Unreleased
 
+### Fixed
+
+- A request made with a raw `Request::create()` is `New` in memory right away, so `isExpired()`
+  and `Requests::approve()` no longer crash on a null status.
+
 ## 1.0.1 - 2026-10-04
 
 ### Changed

@@ -53,6 +53,16 @@ class Request extends Model implements RequiresApprovalInterface
 
     protected $guarded = [];
 
+    /**
+     * The column defaults to New too, but only a refresh would bring that into memory: a
+     * request made with a raw `create()` must be New right away.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'status' => Status::New->value,
+    ];
+
     /** @return MorphTo<Model, $this> */
     public function author(): MorphTo
     {
