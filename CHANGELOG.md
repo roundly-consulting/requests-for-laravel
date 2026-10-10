@@ -6,6 +6,8 @@ All notable changes to `requests-for-laravel` are documented in this file. The f
 
 ## Unreleased
 
+## 1.1.0 - 2026-10-10
+
 ### Added
 
 - `requests.primary_key_type` (env `REQUESTS_PRIMARY_KEY_TYPE`): the requests table's own id can
@@ -20,9 +22,16 @@ All notable changes to `requests-for-laravel` are documented in this file. The f
 
 - Requires `roundly-consulting/approvals-for-laravel` `^1.1` (was `^1.0`), for its public round
   close.
+- `ExpireDueRequests`' constructor takes the package's internal overdue-expiry step (defaulted)
+  instead of an `ExpireRequest`. `Requests::expireDue()`, `requests:expire` and
+  `app(ExpireDueRequests::class)` are unaffected. Code that builds the action by hand as
+  `new ExpireDueRequests($expireRequest)` must drop the argument (`new ExpireDueRequests()`) or
+  resolve it from the container. **Behaviour change.**
 - Documentation: `Requests::reopen()` is a lifecycle move like `cancel()` and `expire()`. It does
   not require the actor to be one of the round's approvers, so the host authorizes who may reopen.
   `ApprovalRevoked` is the reopen signal.
+- Documentation: the README hero image uses an absolute URL, so it shows on Packagist and other
+  sites.
 
 ### Fixed
 
