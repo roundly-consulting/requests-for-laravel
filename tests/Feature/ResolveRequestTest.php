@@ -139,3 +139,20 @@ it('fires granular approval, revoke and rejection events with the acting actor',
     $action->execute($request, $user, Status::New);
     Event::assertDispatched(fn (ApprovalRevoked $e) => $e->request->is($request) && $e->actor->is($user));
 });
+
+/**
+ * C-10: on the no-round path RequestRejected fired before the status was written, so its
+ * listeners still saw New — the round path (the sync listener) writes first.
+ */
+it('writes the rejection before announcing it on a request without approvers', function (): void {
+    $request = (new CreateRequest)->execute(new CreateRequestDto);
+    $seen = [];
+
+    Event::listen(RequestRejected::class, function (RequestRejected $event) use (&$seen): void {
+        $seen = [$event->request->status, $event->request->fresh()?->status];
+    });
+
+    (new ResolveRequest)->execute($request, User::create(), Status::Rejected);
+
+    expect($seen)->toBe([Status::Rejected, Status::Rejected]);
+});

@@ -10,6 +10,9 @@ All notable changes to `requests-for-laravel` are documented in this file. The f
 
 - A request made with a raw `Request::create()` is `New` in memory right away, so `isExpired()`
   and `Requests::approve()` no longer crash on a null status.
+- Rejecting a request without approvers writes `Rejected` before `RequestRejected` fires, so its
+  listeners see the rejection (`RequestStatusChanged` now comes first, as on the approval-round
+  path).
 
 ## 1.0.1 - 2026-10-04
 

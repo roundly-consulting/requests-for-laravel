@@ -86,9 +86,13 @@ final class ResolveRequest
         $this->decide($request, $actor, $reason)->reject();
 
         if (! $hasApprovalRequest) {
+            // Written first, as the sync listener does, so RequestRejected's listeners
+            // see the rejection they are told about.
+            $this->updateRequestStatus($request, Status::Rejected);
+
             event(new RequestRejected($request, $actor));
 
-            return $this->updateRequestStatus($request, Status::Rejected);
+            return $request;
         }
 
         return $request->refresh();
