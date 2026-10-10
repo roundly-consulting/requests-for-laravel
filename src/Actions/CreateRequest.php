@@ -41,17 +41,20 @@ final class CreateRequest
      * pipeline, then the flat declared approver set. A request without approvers opens
      * nothing and resolves on the first decision.
      *
-     * A staged or flat round expires with the request, so the engine stops taking
-     * decisions once its deadline passes. A workflow preset's round keeps the preset's own
-     * expiry (the preset builder takes none); the request's deadline still refuses a late
-     * decision there, because `approve()` / `reject()` expire an overdue request first.
+     * Every round expires with the request, so the engine stops taking decisions once
+     * its deadline passes. A workflow preset's round takes the request's deadline in
+     * place of the preset's own `expiry`, and keeps the preset's when the request has
+     * none. Only the expiry goes on the builder before `workflow()`: the preset owns the
+     * rule and stages, and the approvers go to `open()`.
      */
     private function openApprovalRequest(Request $request, CreateRequestDto $dto): void
     {
         if ($dto->workflow !== null) {
             $approvers = $dto->stageApprovers !== [] ? $dto->stageApprovers : $dto->approvers;
 
-            Approvals::request($request)->workflow($dto->workflow)->open($approvers);
+            $this->expiringWith($request, Approvals::request($request))
+                ->workflow($dto->workflow)
+                ->open($approvers);
 
             return;
         }

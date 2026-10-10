@@ -11,6 +11,14 @@ All notable changes to `requests-for-laravel` are documented in this file. The f
 - Requires `roundly-consulting/approvals-for-laravel` `^1.2` (was `^1.1`), so a workflow preset's
   round can take the request's deadline.
 
+### Fixed
+
+- A request opened from a workflow preset (`workflow()`) now gives its approval round the
+  request's deadline (`expiresAt()` or `requests.default_ttl`), like a staged or flat round. The
+  round used to keep the preset's own `expiry`, so the engine could close it before the request's
+  deadline, or keep taking decisions after it. `Requests::reopen()` gives the fresh preset round
+  the deadline too. Without a request deadline the round still keeps the preset's `expiry`.
+
 ## 1.1.0 - 2026-10-10
 
 ### Added

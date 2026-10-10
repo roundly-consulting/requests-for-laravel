@@ -167,7 +167,9 @@ final class RequestBuilder
     /**
      * Open the request from a named workflow preset (config('approvals.workflows')).
      * Provide flat approvers via requireApprovalsFrom(), or one group per stage via
-     * stageApprovers() for a staged preset.
+     * stageApprovers() for a staged preset. The round expires with the request
+     * (expiresAt() or `requests.default_ttl`); without a deadline it keeps the preset's
+     * own `expiry`.
      */
     public function workflow(?string $name): self
     {

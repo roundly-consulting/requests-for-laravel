@@ -337,6 +337,67 @@ it('gives the reopened round the request expiry', function (): void {
 });
 
 /**
+ * #112: a reopened preset round dropped the request's deadline too.
+ */
+it('gives a reopened preset round the request deadline', function (): void {
+    Carbon::setTestNow('2026-10-01 12:00:00');
+    config()->set('approvals.workflows', [
+        'payout' => ['rule' => 'any', 'required_approvers' => 1, 'expiry' => 3600],
+        'release' => ['expiry' => 3600, 'stages' => [
+            ['rule' => 'unanimous', 'required_approvers' => 1, 'name' => 'engineering'],
+            ['rule' => 'any', 'required_approvers' => 1, 'name' => 'product'],
+        ]],
+    ]);
+
+    $a = User::create();
+    $b = User::create();
+
+    $flat = Requests::make()->workflow('payout')->requireApprovalsFrom([$a])->expiresAt(now()->addDays(7))->create();
+    $staged = Requests::make()->workflow('release')->stageApprovers([[$a], [$b]])->expiresAt(now()->addDays(7))->create();
+
+    Carbon::setTestNow('2026-10-02 12:00:00');
+    Requests::approve($flat, $a);
+    Requests::reopen($flat, $a);
+    Requests::approve($staged, $a);
+    Requests::approve($staged, $b);
+    Requests::reopen($staged, $b);
+
+    expect($flat->approvalRequests()->count())->toBe(2)
+        ->and($flat->approvalRequests()->latest('id')->firstOrFail()->expires_at?->toDateTimeString())->toBe('2026-10-08 12:00:00')
+        ->and($staged->approvalRequests()->count())->toBe(2)
+        ->and($staged->approvalRequests()->latest('id')->firstOrFail()->expires_at?->toDateTimeString())->toBe('2026-10-08 12:00:00');
+
+    Carbon::setTestNow();
+});
+
+it('keeps the preset expiry on a reopened round when the request has no deadline', function (): void {
+    Carbon::setTestNow('2026-10-01 12:00:00');
+    config()->set('approvals.workflows', [
+        'payout' => ['rule' => 'any', 'required_approvers' => 1, 'expiry' => 3600],
+        'release' => ['expiry' => 3600, 'stages' => [
+            ['rule' => 'any', 'required_approvers' => 1, 'name' => 'engineering'],
+        ]],
+    ]);
+
+    $a = User::create();
+
+    $flat = Requests::make()->workflow('payout')->requireApprovalsFrom([$a])->create();
+    $staged = Requests::make()->workflow('release')->stageApprovers([[$a]])->create();
+
+    Carbon::setTestNow('2026-10-01 12:30:00');
+    Requests::approve($flat, $a);
+    Requests::reopen($flat, $a);
+    Requests::approve($staged, $a);
+    Requests::reopen($staged, $a);
+
+    expect($flat->fresh()?->expires_at)->toBeNull()
+        ->and($flat->approvalRequests()->latest('id')->firstOrFail()->expires_at?->toDateTimeString())->toBe('2026-10-01 13:30:00')
+        ->and($staged->approvalRequests()->latest('id')->firstOrFail()->expires_at?->toDateTimeString())->toBe('2026-10-01 13:30:00');
+
+    Carbon::setTestNow();
+});
+
+/**
  * C-3: reopen wrote only the status, so a request that expired on its deadline came back
  * New with that deadline still past — `isExpired()` true, and the next sweep expired it
  * again. Reopening clears a passed deadline, or restarts the default TTL when one is set.

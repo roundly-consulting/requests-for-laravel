@@ -20,8 +20,9 @@ use RoundlyConsulting\Requests\Models\Request;
  * Opens a fresh approval round for a reopened request whose latest round is over, so it
  * can be decided again. The round replays the latest one's shape — the same workflow
  * preset, the same stages, or the same named approvers under the same rule — through the
- * approvals builder, so its approvers stay enforced, and a staged or flat round expires
- * with the request. Decisions from the finished round don't carry over. A request that
+ * approvals builder, so its approvers stay enforced, and it expires with the request
+ * (a preset round keeps the preset's own expiry only when the request has no deadline).
+ * Decisions from the finished round don't carry over. A request that
  * never had a round, or whose round is still open, is left alone.
  *
  * @internal
@@ -46,7 +47,9 @@ final class RestartApprovalRound
                 ? array_map(fn (ApprovalRequestStage $stage): array => $this->models($stage->namedApprovers()), $stages)
                 : $this->models($latest->namedApprovers());
 
-            return Approvals::request($request)->workflow($latest->workflow)->open($approvers);
+            return $this->expiringWith($request, Approvals::request($request))
+                ->workflow($latest->workflow)
+                ->open($approvers);
         }
 
         if ($latest->staged) {
