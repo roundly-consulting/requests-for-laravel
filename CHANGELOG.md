@@ -22,6 +22,10 @@ All notable changes to `requests-for-laravel` are documented in this file. The f
   approvers. Flat and staged approval rounds (also the fresh round `reopen()` opens) now carry the
   request's `expires_at`, so the approvals engine stops taking decisions at the same deadline.
   **Behaviour change.**
+- Reopening a request whose `expires_at` already passed (it expired on its deadline, or was
+  decided before the deadline went by) no longer brings it back already overdue, to be expired
+  again by the next sweep. Its deadline restarts at `requests.default_ttl` from now when that is
+  set, and is cleared otherwise. A deadline still in the future is kept. **Behaviour change.**
 - Status writes no longer trust a stale copy of the request. `cancel()`, `expire()`, `reopen()`,
   `approve()` / `reject()` on a request without approvers, and the approval-sync listener re-read
   the request's row under a lock (`lockForUpdate()`) and check it there. A copy loaded before a

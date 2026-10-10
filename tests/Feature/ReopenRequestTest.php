@@ -335,3 +335,70 @@ it('gives the reopened round the request expiry', function (): void {
 
     Carbon::setTestNow();
 });
+
+/**
+ * C-3: reopen wrote only the status, so a request that expired on its deadline came back
+ * New with that deadline still past — `isExpired()` true, and the next sweep expired it
+ * again. Reopening clears a passed deadline, or restarts the default TTL when one is set.
+ */
+it('clears a passed deadline when an expired request is reopened', function (): void {
+    Carbon::setTestNow('2026-10-01 12:00:00');
+
+    $alice = User::create();
+    $request = Requests::make()->requireApprovalsFrom([$alice])->expiresAt(now()->addDay())->create();
+
+    Carbon::setTestNow('2026-10-03 12:00:00');
+
+    expect(Requests::expireDue())->toBe(1);
+
+    Requests::reopen($request, $alice);
+
+    expect($request->isExpired())->toBeFalse()
+        ->and($request->fresh()?->expires_at)->toBeNull()
+        ->and($request->approvalRequests()->latest('id')->firstOrFail()->expires_at)->toBeNull()
+        ->and(Requests::expireDue())->toBe(0);
+
+    Requests::approve($request, $alice);
+
+    expect($request->fresh()?->status)->toBe(Status::Approved);
+
+    Carbon::setTestNow();
+});
+
+it('restarts the default ttl when an expired request is reopened', function (): void {
+    Carbon::setTestNow('2026-10-01 12:00:00');
+    config()->set('requests.default_ttl', 60);
+
+    $alice = User::create();
+    $request = Requests::make()->requireApprovalsFrom([$alice])->create();
+
+    Carbon::setTestNow('2026-10-03 12:00:00');
+    Requests::expireDue();
+    Requests::reopen($request, $alice);
+
+    expect($request->fresh()?->expires_at?->toDateTimeString())->toBe('2026-10-03 13:00:00')
+        ->and($request->approvalRequests()->latest('id')->firstOrFail()->expires_at?->toDateTimeString())->toBe('2026-10-03 13:00:00')
+        ->and(Requests::expireDue())->toBe(0);
+
+    Carbon::setTestNow();
+});
+
+it('clears a deadline that passed after the request was decided', function (): void {
+    Carbon::setTestNow('2026-10-01 12:00:00');
+
+    $alice = User::create();
+    $request = Requests::make()->requireApprovalsFrom([$alice])->expiresAt(now()->addDay())->create();
+    Requests::approve($request, $alice);
+
+    Carbon::setTestNow('2026-10-03 12:00:00');
+    Requests::reopen($request, $alice);
+
+    expect($request->isExpired())->toBeFalse()
+        ->and($request->fresh()?->expires_at)->toBeNull();
+
+    Requests::approve($request, $alice);
+
+    expect($request->fresh()?->status)->toBe(Status::Approved);
+
+    Carbon::setTestNow();
+});

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Requests\Actions;
 
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use RoundlyConsulting\Approvals\Builders\PendingApproval;
 use RoundlyConsulting\Approvals\Enums\ApprovalStatus;
 use RoundlyConsulting\Approvals\Facades\Approvals;
@@ -17,6 +19,7 @@ use RoundlyConsulting\Requests\Events\RequestStatusChanged;
 use RoundlyConsulting\Requests\Exceptions\RequestAlreadyResolved;
 use RoundlyConsulting\Requests\Models\Request;
 use RoundlyConsulting\Requests\Support\DecisionGate;
+use RoundlyConsulting\Requests\Support\DefaultTtl;
 use RoundlyConsulting\Requests\Support\StatusGuard;
 use RoundlyConsulting\Requests\Support\StatusWriter;
 
@@ -144,7 +147,8 @@ final class ResolveRequest
      * engine refuses that withdrawal, and a fresh round opens instead so the request can
      * be decided again — all as one unit, under a lock on the request's row, so a round
      * that cannot reopen leaves the request as it was and a stale copy cannot reopen a
-     * request closed since it was loaded.
+     * request closed since it was loaded. A request moved back to New whose deadline
+     * already passed gets a fresh one (`requests.default_ttl`) or none.
      */
     private function reopen(Request $request, Model&GivesApprovalsInterface $actor, ?string $reason): Request
     {
@@ -164,6 +168,12 @@ final class ResolveRequest
             }
 
             if ($moves) {
+                // A deadline that already passed would leave the reopened request expired
+                // at once, and the next sweep would close it again: it restarts instead.
+                if ($request->expires_at?->isPast() === true) {
+                    $request->expires_at = $this->restartedDeadline();
+                }
+
                 $writer->write($request, Status::New);
             }
 
@@ -230,6 +240,17 @@ final class ResolveRequest
     private function enforcing(): bool
     {
         return Config::boolean('requests.enforce_transitions');
+    }
+
+    /**
+     * The deadline of a reopened request whose deadline passed: `requests.default_ttl` from
+     * now when one is set, otherwise none.
+     */
+    private function restartedDeadline(): ?CarbonInterface
+    {
+        $ttl = DefaultTtl::minutes();
+
+        return $ttl === null ? null : Carbon::now()->addMinutes($ttl);
     }
 
     private function writer(): StatusWriter
