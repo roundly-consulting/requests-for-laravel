@@ -22,7 +22,7 @@
     "require": {
         "php": "^8.4",
         "illuminate/contracts": "^12.0|^13.0",
-        "roundly-consulting/approvals-for-laravel": "^1.0",
+        "roundly-consulting/approvals-for-laravel": "^1.1",
         "roundly-consulting/enums-for-laravel": "^1.0",
         "roundly-consulting/package-toolkit-for-laravel": "^1.0"
     },

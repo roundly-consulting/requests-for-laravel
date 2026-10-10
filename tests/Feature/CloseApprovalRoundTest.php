@@ -2,11 +2,15 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\Approvals\Enums\ApprovalStatus;
+use RoundlyConsulting\Approvals\Events\ApprovalCancelled;
 use RoundlyConsulting\Approvals\Events\ApprovalRequestResolved;
 use RoundlyConsulting\Approvals\Events\ApprovalStatusChanged;
 use RoundlyConsulting\Approvals\Exceptions\ClosedApprovalRequestException;
+use RoundlyConsulting\Approvals\Facades\Approvals;
+use RoundlyConsulting\Approvals\Models\Approval;
 use RoundlyConsulting\Approvals\Models\ApprovalRequest;
 use RoundlyConsulting\Requests\Actions\ResolveRequest;
 use RoundlyConsulting\Requests\Enums\Status;
@@ -143,4 +147,74 @@ it('keeps the outcome of a decision that resolved the round between the read and
     expect($raced)->toBeTrue()
         ->and($request->approvalRequests()->firstOrFail()->status)->toBe(ApprovalStatus::Approved)
         ->and($request->fresh()?->status)->toBe(Status::Cancelled);
+});
+
+/**
+ * C-9: closing the round on cancel or expire copied the engine's finalize, and missed the
+ * engine retiring the round's outstanding asks — the asked approver's pending decision
+ * stayed live, and could be neither answered nor withdrawn.
+ */
+it('retires the outstanding asks of the round it closes', function (string $verb, ApprovalStatus $outcome): void {
+    $alice = User::create();
+    $bob = User::create();
+
+    $request = Requests::make()->requireApprovalsFrom([$alice, $bob])->create();
+    $ask = Approvals::for($request)->as($alice)->ask();
+
+    $events = [];
+
+    Event::listen(ApprovalCancelled::class, function (ApprovalCancelled $e) use (&$events): void {
+        $events[] = 'ask cancelled';
+    });
+    Event::listen(ApprovalStatusChanged::class, function (ApprovalStatusChanged $e) use (&$events): void {
+        $events[] = ($e->subject instanceof Approval ? 'ask ' : 'round ').$e->from->value.' -> '.$e->to->value;
+    });
+    Event::listen(ApprovalRequestResolved::class, function () use (&$events): void {
+        $events[] = 'round resolved';
+    });
+
+    Requests::{$verb}($request);
+
+    $ask->refresh();
+
+    expect($ask->status)->toBe(ApprovalStatus::Cancelled)
+        ->and($ask->live)->toBeNull()
+        ->and(Approvals::for($request)->as($alice)->hasPending())->toBeFalse()
+        ->and($request->approvalRequests()->firstOrFail()->status)->toBe($outcome)
+        ->and($events)->toBe([
+            'ask cancelled',
+            'ask pending -> cancelled',
+            'round resolved',
+            'round pending -> '.$outcome->value,
+        ]);
+})->with([
+    'cancel' => ['cancel', ApprovalStatus::Cancelled],
+    'expire' => ['expire', ApprovalStatus::Expired],
+]);
+
+/**
+ * The round carries the request's deadline (C-2), and the engine closes a round already past
+ * its expiry as expired whatever outcome is asked for (approvals 1.1). Cancelling an overdue
+ * request the sweep has not reached yet still cancels the request: only its round reads
+ * expired, and the late resolution does not move the cancelled request.
+ */
+it('cancels an overdue request whose round the engine closes as expired', function (): void {
+    Carbon::setTestNow('2026-10-01 12:00:00');
+
+    $alice = User::create();
+    $request = Requests::make()->requireApprovalsFrom([$alice])->expiresAt(now()->addDay())->create();
+
+    Carbon::setTestNow('2026-10-03 12:00:00');
+
+    Event::fake([RequestCancelled::class, RequestExpired::class]);
+
+    Requests::cancel($request);
+
+    expect($request->fresh()?->status)->toBe(Status::Cancelled)
+        ->and($request->approvalRequests()->firstOrFail()->status)->toBe(ApprovalStatus::Expired);
+
+    Event::assertDispatchedTimes(RequestCancelled::class, 1);
+    Event::assertNotDispatched(RequestExpired::class);
+
+    Carbon::setTestNow();
 });

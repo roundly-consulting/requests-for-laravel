@@ -6,6 +6,11 @@ All notable changes to `requests-for-laravel` are documented in this file. The f
 
 ## Unreleased
 
+### Changed
+
+- Requires `roundly-consulting/approvals-for-laravel` `^1.1` (was `^1.0`), for its public round
+  close.
+
 ### Fixed
 
 - A request made with a raw `Request::create()` is `New` in memory right away, so `isExpired()`
@@ -34,6 +39,13 @@ All notable changes to `requests-for-laravel` are documented in this file. The f
 - `Requests::fake()`'s `assertApproved()` / `assertRejected()` / `assertReopened()` /
   `assertCancelled()` / `assertExpired()` no longer treat two unsaved requests (what the fake's
   `create()` returns) as the same one: without a key, only the very same instance matches.
+- `Requests::cancel()` and `expire()` (and `requests:expire`) close the approval round through the
+  approvals engine's own close (`Approvals::for()->close()`, approvals-for-laravel 1.1), so the
+  round's outstanding asks are retired too (`ApprovalCancelled` and `ApprovalStatusChanged`
+  pending → cancelled for each, before `ApprovalRequestResolved`). An asked approver's pending
+  decision no longer stays live on a closed round, where it could be neither answered nor
+  withdrawn. A round already past its expiry closes as expired, whatever the request moved to.
+  Requires `roundly-consulting/approvals-for-laravel` `^1.1`.
 - Status writes no longer trust a stale copy of the request. `cancel()`, `expire()`, `reopen()`,
   `approve()` / `reject()` on a request without approvers, and the approval-sync listener re-read
   the request's row under a lock (`lockForUpdate()`) and check it there. A copy loaded before a
