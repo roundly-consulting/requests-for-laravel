@@ -31,6 +31,9 @@ All notable changes to `requests-for-laravel` are documented in this file. The f
   exactly as the real create sets them, still unsaved. Host code typed against its own request
   model no longer throws a `TypeError` under the fake only. A bare-id approver is refused with
   `InvalidApprover`, as in the real create.
+- `Requests::fake()`'s `assertApproved()` / `assertRejected()` / `assertReopened()` /
+  `assertCancelled()` / `assertExpired()` no longer treat two unsaved requests (what the fake's
+  `create()` returns) as the same one: without a key, only the very same instance matches.
 - Status writes no longer trust a stale copy of the request. `cancel()`, `expire()`, `reopen()`,
   `approve()` / `reject()` on a request without approvers, and the approval-sync listener re-read
   the request's row under a lock (`lockForUpdate()`) and check it there. A copy loaded before a

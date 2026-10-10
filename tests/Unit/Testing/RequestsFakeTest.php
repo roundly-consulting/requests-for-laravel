@@ -224,3 +224,44 @@ it('refuses a bare-id approver under the fake, as the real create does', functio
 
     $fake->assertCreated(1);
 });
+
+/**
+ * C-8: matching went through `Model::is()`, which compares keys — and two unsaved requests
+ * (what the fake's own create() returns) both have a null key, so after deciding one,
+ * every assertion passed for the other too.
+ */
+it('tells two unsaved requests apart', function (): void {
+    $fake = Requests::fake();
+
+    $a = Requests::make()->title('A')->create();
+    $b = Requests::make()->title('B')->create();
+    $actor = User::create();
+
+    Requests::approve($a, $actor);
+    Requests::reject($a, $actor);
+    Requests::reopen($a, $actor);
+    Requests::cancel($a);
+    Requests::expire($a);
+
+    $fake->assertApproved($a);
+    $fake->assertRejected($a);
+    $fake->assertReopened($a);
+    $fake->assertCancelled($a);
+    $fake->assertExpired($a);
+
+    expect(fn () => $fake->assertApproved($b))->toThrow(AssertionFailedError::class)
+        ->and(fn () => $fake->assertRejected($b))->toThrow(AssertionFailedError::class)
+        ->and(fn () => $fake->assertReopened($b))->toThrow(AssertionFailedError::class)
+        ->and(fn () => $fake->assertCancelled($b))->toThrow(AssertionFailedError::class)
+        ->and(fn () => $fake->assertExpired($b))->toThrow(AssertionFailedError::class);
+});
+
+it('still matches a saved request by key', function (): void {
+    $fake = Requests::fake();
+
+    $saved = Request::factory()->pending()->create();
+
+    Requests::cancel($saved);
+
+    $fake->assertCancelled(Request::query()->findOrFail($saved->getKey()));
+});

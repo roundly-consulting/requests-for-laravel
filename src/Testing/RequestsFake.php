@@ -230,7 +230,7 @@ final class RequestsFake extends RequestManager
     private function contains(array $records, Request $request): bool
     {
         foreach ($records as $record) {
-            if ($record->is($request)) {
+            if (RecordedDecision::same($record, $request)) {
                 return true;
             }
         }

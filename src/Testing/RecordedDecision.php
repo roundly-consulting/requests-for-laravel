@@ -20,8 +20,24 @@ final readonly class RecordedDecision
 
     public function matches(Request $request, ?Model $actor, ?string $reason): bool
     {
-        return $this->request->is($request)
-            && ($actor === null || $this->actor->is($actor))
+        return self::same($this->request, $request)
+            && ($actor === null || self::same($this->actor, $actor))
             && ($reason === null || $this->reason === $reason);
+    }
+
+    /**
+     * Whether two models are the same record. `Model::is()` compares keys, and two unsaved
+     * models — what the fake's own create() returns — both have none, so without a key
+     * only the very same instance matches.
+     *
+     * @internal
+     */
+    public static function same(Model $recorded, Model $given): bool
+    {
+        if ($recorded->getKey() === null || $given->getKey() === null) {
+            return $recorded === $given;
+        }
+
+        return $recorded->is($given);
     }
 }
