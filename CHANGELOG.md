@@ -6,6 +6,8 @@ All notable changes to `requests-for-laravel` are documented in this file. The f
 
 ## Unreleased
 
+## 1.2.0 - 2026-10-10
+
 ### Changed
 
 - Requires `roundly-consulting/approvals-for-laravel` `^1.2` (was `^1.1`), so a workflow preset's
