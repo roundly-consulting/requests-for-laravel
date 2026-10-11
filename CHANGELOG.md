@@ -6,6 +6,11 @@ All notable changes to `requests-for-laravel` are documented in this file. The f
 
 ## Unreleased
 
+### Changed
+
+- Maintenance: requires the latest roundly packages — package-toolkit `^1.3.0`, enums `^1.1.0`,
+  approvals `^1.2.3`; dev: testing `^1.2.1`.
+
 ## 1.2.0 - 2026-10-10
 
 ### Changed
