@@ -8,11 +8,23 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Database\Eloquent\Model;
 use RoundlyConsulting\Requests\Enums\Status;
 use RoundlyConsulting\Requests\Models\Request;
+use RoundlyConsulting\Requests\Support\RequestModel;
 
 /** @extends Factory<Request> */
 final class RequestFactory extends Factory
 {
     protected $model = Request::class;
+
+    /**
+     * Build the model the host configured in `requests.model`, not the packaged one, so a host
+     * subclass comes out of the factory with its own events, observers and table.
+     *
+     * @return class-string<Request>
+     */
+    public function modelName(): string
+    {
+        return RequestModel::class();
+    }
 
     /** @return array<string, mixed> */
     public function definition(): array

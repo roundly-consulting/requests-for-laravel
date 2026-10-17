@@ -6,6 +6,10 @@ All notable changes to `requests-for-laravel` are documented in this file. The f
 
 ## Unreleased
 
+### Fixed
+
+- Factories build the configured model when a host swaps it.
+
 ## 1.2.1 - 2026-10-11
 
 ### Changed

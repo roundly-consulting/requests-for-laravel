@@ -59,6 +59,8 @@ ArchPresets::noLocalCryptoPrimitives('RoundlyConsulting\Requests');
  */
 ArchPresets::modelsResolveThroughSeam(__DIR__.'/../src', 'Support', ['requests.model']);
 
+ArchPresets::factoriesResolveThroughSeam(__DIR__.'/../database/factories', __DIR__.'/../src', 'Support');
+
 /**
  * The morph-key seam, guarded. Requests' `author` column migrated off raw
  * `$table->morphs()` onto `morphKey('author', KeyType::fromConfig(...))` so a uuid/ulid
