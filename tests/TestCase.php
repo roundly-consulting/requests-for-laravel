@@ -56,4 +56,13 @@ abstract class TestCase extends PackageTestCase
             __DIR__.'/database/migrations',
         ];
     }
+
+    /**
+     * Migrate once per worker and schema signature, then empty the tables after each test.
+     * The migrations read only config, which the signature already covers.
+     */
+    protected function keepsMigratedSchema(): bool
+    {
+        return true;
+    }
 }
